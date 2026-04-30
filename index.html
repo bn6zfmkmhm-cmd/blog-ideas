@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>哲学ゴリラ戦線 — アイデア管理</title>
+<style>
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #242424;
+    --border: #333;
+    --accent: #7c5cbf;
+    --accent2: #a07de0;
+    --text: #e8e8e8;
+    --muted: #888;
+    --danger: #bf5c5c;
+    --green: #5cbf8a;
+    --yellow: #bfaa5c;
+    --tag-colors: #7c5cbf, #5c8abf, #5cbf8a, #bfaa5c, #bf5c5c, #bf7c5c, #5cbfbf;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: 56px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: var(--accent2);
+    white-space: nowrap;
+  }
+
+  .logo span { color: var(--text); }
+
+  .header-search {
+    flex: 1;
+    max-width: 400px;
+    position: relative;
+  }
+
+  .header-search input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 12px 7px 36px;
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .header-search input:focus { border-color: var(--accent); }
+
+  .header-search .search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    font-size: 15px;
+    pointer-events: none;
+  }
+
+  .header-actions { margin-left: auto; display: flex; gap: 8px; }
+
+  .btn {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.15s;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .btn-primary:hover { background: var(--accent2); }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+
+  .btn-ghost:hover { color: var(--text); border-color: var(--accent); }
+
+  .btn-danger {
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+  }
+
+  .btn-danger:hover { background: var(--danger); color: #fff; }
+
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+  .layout {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    height: calc(100vh - 56px);
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 220px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow-y: auto;
+  }
+
+  .sidebar-section { padding: 16px 12px 8px; }
+
+  .sidebar-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    padding: 0 4px;
+  }
+
+  .sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--muted);
+    transition: all 0.15s;
+    user-select: none;
+  }
+
+  .sidebar-item:hover { background: var(--surface2); color: var(--text); }
+  .sidebar-item.active { background: var(--accent); color: #fff; }
+
+  .sidebar-item .count {
+    margin-left: auto;
+    font-size: 11px;
+    background: var(--surface2);
+    padding: 1px 6px;
+    border-radius: 10px;
+    color: var(--muted);
+  }
+
+  .sidebar-item.active .count { background: rgba(255,255,255,0.2); color: #fff; }
+
+  .tag-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* Main */
+  .main {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  .ideas-panel {
+    width: 340px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .panel-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .panel-title {
+    font-size: 16px;
+    font-weight: 700;
+    flex: 1;
+  }
+
+  .idea-count {
+    font-size: 12px;
+    color: var(--muted);
+    background: var(--surface2);
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+
+  .ideas-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+  }
+
+  .idea-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+  }
+
+  .idea-card:hover { border-color: var(--accent); }
+  .idea-card.selected { border-color: var(--accent); background: #2a1f40; }
+
+  .idea-card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .idea-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    flex: 1;
+    line-height: 1.4;
+  }
+
+  .status-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 10px;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .status-idea { background: #1a2a40; color: #5c9abf; }
+  .status-draft { background: #2a2a1a; color: var(--yellow); }
+  .status-published { background: #1a2a1a; color: var(--green); }
+
+  .idea-card-excerpt {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.5;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .idea-card-footer {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+
+  .tag-chip {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+
+  .idea-date {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  /* Editor panel */
+  .editor-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  .editor-toolbar {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface);
+    flex-wrap: wrap;
+  }
+
+  .editor-title-input {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 20px;
+    font-weight: 700;
+    outline: none;
+    flex: 1;
+    min-width: 200px;
+  }
+
+  .editor-title-input::placeholder { color: var(--muted); }
+
+  .editor-meta {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: var(--surface);
+  }
+
+  .meta-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .meta-label {
+    font-size: 12px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  select.meta-select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  select.meta-select:focus { border-color: var(--accent); }
+
+  .tag-input-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    flex: 1;
+  }
+
+  .tag-input {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    outline: none;
+    width: 120px;
+  }
+
+  .tag-input:focus { border-color: var(--accent); }
+
+  .tag-chip-removable {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    background: var(--accent);
+    color: #fff;
+    cursor: default;
+  }
+
+  .tag-chip-removable button {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.7);
+    cursor: pointer;
+    padding: 0;
+    font-size: 14px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+  }
+
+  .tag-chip-removable button:hover { color: #fff; }
+
+  .editor-body {
+    flex: 1;
+    padding: 24px;
+    overflow-y: auto;
+  }
+
+  .editor-textarea {
+    width: 100%;
+    min-height: 100%;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.75;
+    outline: none;
+    resize: none;
+    font-family: inherit;
+  }
+
+  .editor-textarea::placeholder { color: var(--muted); }
+
+  .editor-footer {
+    padding: 10px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .save-status { flex: 1; }
+
+  /* Empty state */
+  .empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--muted);
+    text-align: center;
+    padding: 40px;
+  }
+
+  .empty-icon { font-size: 48px; }
+  .empty-title { font-size: 18px; font-weight: 700; color: var(--text); }
+  .empty-desc { font-size: 14px; }
+
+  /* Modal */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-overlay.open { display: flex; }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px;
+    width: 420px;
+    max-width: 90vw;
+  }
+
+  .modal-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 20px;
+  }
+
+  .form-group { margin-bottom: 16px; }
+
+  .form-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .form-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .form-input:focus { border-color: var(--accent); }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 24px;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  /* Category colors */
+  .cat-philosophy { color: #a07de0; }
+  .cat-society { color: #5c9abf; }
+  .cat-science { color: #5cbf8a; }
+  .cat-culture { color: #bfaa5c; }
+  .cat-personal { color: #bf7c5c; }
+  .cat-uncategorized { color: var(--muted); }
+
+  .no-results {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  @media (max-width: 768px) {
+    .sidebar { width: 56px; }
+    .sidebar-label, .sidebar-item span:not(.count) { display: none; }
+    .sidebar-item { justify-content: center; }
+    .ideas-panel { width: 280px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🦍 <span>哲学ゴリラ戦線</span></div>
+  <div class="header-search">
+    <span class="search-icon">🔍</span>
+    <input type="text" id="globalSearch" placeholder="アイデアを検索..." oninput="handleSearch()">
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-primary" onclick="openNewIdeaModal()">＋ 新規アイデア</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">表示</div>
+      <div class="sidebar-item active" data-filter="all" onclick="setFilter(this, 'all')">
+        <span>📋</span><span>すべて</span><span class="count" id="cnt-all">0</span>
+      </div>
+      <div class="sidebar-item" data-filter="idea" onclick="setFilter(this, 'idea')">
+        <span>💡</span><span>アイデア</span><span class="count" id="cnt-idea">0</span>
+      </div>
+      <div class="sidebar-item" data-filter="draft" onclick="setFilter(this, 'draft')">
+        <span>📝</span><span>下書き</span><span class="count" id="cnt-draft">0</span>
+      </div>
+      <div class="sidebar-item" data-filter="published" onclick="setFilter(this, 'published')">
+        <span>✅</span><span>公開済み</span><span class="count" id="cnt-published">0</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">カテゴリ</div>
+      <div class="sidebar-item" data-filter="cat:philosophy" onclick="setFilter(this, 'cat:philosophy')">
+        <span class="tag-dot" style="background:#a07de0"></span><span>哲学・思想</span><span class="count" id="cnt-cat-philosophy">0</span>
+      </div>
+      <div class="sidebar-item" data-filter="cat:society" onclick="setFilter(this, 'cat:society')">
+        <span class="tag-dot" style="background:#5c9abf"></span><span>社会・政治</span><span class="count" id="cnt-cat-society">0</span>
+      </div>
+      <div class="sidebar-item" data-filter="cat:science" onclick="setFilter(this, 'cat:science')">
+        <span class="tag-dot" style="background:#5cbf8a"></span><span>科学・技術</span><span class="count" id="cnt-cat-science">0</span>
+      </div>
+      <div class="sidebar-item" data-filter="cat:culture" onclick="setFilter(this, 'cat:culture')">
+        <span class="tag-dot" style="background:#bfaa5c"></span><span>文化・芸術</span><span class="count" id="cnt-cat-culture">0</span>
+      </div>
+      <div class="sidebar-item" data-filter="cat:personal" onclick="setFilter(this, 'cat:personal')">
+        <span class="tag-dot" style="background:#bf7c5c"></span><span>個人・日常</span><span class="count" id="cnt-cat-personal">0</span>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="ideas-panel">
+      <div class="panel-header">
+        <span class="panel-title" id="panelTitle">すべてのアイデア</span>
+        <span class="idea-count" id="ideaCount">0件</span>
+      </div>
+      <div class="ideas-list" id="ideasList"></div>
+    </div>
+
+    <div class="editor-panel" id="editorPanel">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">🦍</div>
+        <div class="empty-title">アイデアを選択してください</div>
+        <div class="empty-desc">左のリストからアイデアを選ぶか、<br>「＋ 新規アイデア」で追加しましょう</div>
+      </div>
+
+      <div id="editorContent" style="display:none; display:flex; flex-direction:column; height:100%;">
+        <div class="editor-toolbar">
+          <input type="text" class="editor-title-input" id="editorTitle" placeholder="タイトルを入力..." oninput="markDirty()">
+          <div style="display:flex;gap:6px;margin-left:auto;">
+            <button class="btn btn-ghost btn-sm" onclick="deleteCurrentIdea()">🗑 削除</button>
+            <button class="btn btn-primary btn-sm" onclick="saveCurrentIdea()">💾 保存</button>
+          </div>
+        </div>
+        <div class="editor-meta">
+          <div class="meta-group">
+            <span class="meta-label">ステータス</span>
+            <select class="meta-select" id="editorStatus" onchange="markDirty()">
+              <option value="idea">💡 アイデア</option>
+              <option value="draft">📝 下書き</option>
+              <option value="published">✅ 公開済み</option>
+            </select>
+          </div>
+          <div class="meta-group">
+            <span class="meta-label">カテゴリ</span>
+            <select class="meta-select" id="editorCategory" onchange="markDirty()">
+              <option value="uncategorized">未分類</option>
+              <option value="philosophy">哲学・思想</option>
+              <option value="society">社会・政治</option>
+              <option value="science">科学・技術</option>
+              <option value="culture">文化・芸術</option>
+              <option value="personal">個人・日常</option>
+            </select>
+          </div>
+          <div class="meta-group" style="flex:1">
+            <span class="meta-label">タグ</span>
+            <div class="tag-input-wrap" id="tagChips"></div>
+            <input type="text" class="tag-input" id="tagInput" placeholder="タグを入力してEnter"
+              onkeydown="handleTagInput(event)">
+          </div>
+        </div>
+        <div class="editor-body">
+          <textarea class="editor-textarea" id="editorBody"
+            placeholder="ここにアイデアのメモを書いてください...&#10;&#10;思いついたこと、参考資料、構成案など自由に。" oninput="markDirty()"></textarea>
+        </div>
+        <div class="editor-footer">
+          <span class="save-status" id="saveStatus">—</span>
+          <span id="charCount">0文字</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- New Idea Modal -->
+<div class="modal-overlay" id="newIdeaModal">
+  <div class="modal">
+    <div class="modal-title">💡 新規アイデアを追加</div>
+    <div class="form-group">
+      <label class="form-label">タイトル <span style="color:var(--danger)">*</span></label>
+      <input type="text" class="form-input" id="newTitle" placeholder="アイデアのタイトル..."
+        onkeydown="if(event.key==='Enter')createIdea()">
+    </div>
+    <div class="form-group">
+      <label class="form-label">カテゴリ</label>
+      <select class="form-input" id="newCategory">
+        <option value="uncategorized">未分類</option>
+        <option value="philosophy">哲学・思想</option>
+        <option value="society">社会・政治</option>
+        <option value="science">科学・技術</option>
+        <option value="culture">文化・芸術</option>
+        <option value="personal">個人・日常</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">ステータス</label>
+      <select class="form-input" id="newStatus">
+        <option value="idea">💡 アイデア</option>
+        <option value="draft">📝 下書き</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeNewIdeaModal()">キャンセル</button>
+      <button class="btn btn-primary" onclick="createIdea()">作成する</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──
+let ideas = JSON.parse(localStorage.getItem('gorilla-ideas') || '[]');
+let currentId = null;
+let currentFilter = 'all';
+let searchQuery = '';
+let isDirty = false;
+let saveTimer = null;
+
+// ── Categories ──
+const CAT_LABELS = {
+  uncategorized: '未分類',
+  philosophy: '哲学・思想',
+  society: '社会・政治',
+  science: '科学・技術',
+  culture: '文化・芸術',
+  personal: '個人・日常',
+};
+
+const STATUS_LABELS = { idea: '💡 アイデア', draft: '📝 下書き', published: '✅ 公開済み' };
+
+// ── Sample data ──
+if (ideas.length === 0) {
+  ideas = [
+    {
+      id: uid(),
+      title: 'ゴリラと哲学的ゾンビ問題',
+      status: 'draft',
+      category: 'philosophy',
+      tags: ['心の哲学', 'クオリア'],
+      body: 'ゴリラに意識はあるか？哲学的ゾンビの概念をゴリラに適用することで、意識の謎を新たな角度から照らし出せるかもしれない。\n\nチャーマーズの議論を整理した上で、霊長類認知研究との接点を探る。',
+      createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
+      updatedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
+    },
+    {
+      id: uid(),
+      title: '現代SNSと「洞窟の比喩」',
+      status: 'idea',
+      category: 'society',
+      tags: ['プラトン', 'SNS', 'メディア論'],
+      body: 'プラトンの洞窟の比喩をSNSのアルゴリズムに当てはめると何が見えてくるか。フィルターバブルは新しい洞窟なのか。',
+      createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
+      updatedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
+    },
+    {
+      id: uid(),
+      title: 'AIと「他者」の倫理学',
+      status: 'idea',
+      category: 'science',
+      tags: ['AI倫理', 'レヴィナス'],
+      body: 'レヴィナスの「顔」の概念はAIに適用可能か。AIとの倫理的関係性について問う。',
+      createdAt: new Date(Date.now() - 86400000 * 7).toISOString(),
+      updatedAt: new Date(Date.now() - 86400000 * 7).toISOString(),
+    },
+  ];
+  save();
+}
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function save() {
+  localStorage.setItem('gorilla-ideas', JSON.stringify(ideas));
+}
+
+// ── Filter & Search ──
+function getFiltered() {
+  return ideas.filter(idea => {
+    if (currentFilter === 'all') {
+      // pass
+    } else if (currentFilter.startsWith('cat:')) {
+      if (idea.category !== currentFilter.slice(4)) return false;
+    } else {
+      if (idea.status !== currentFilter) return false;
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const hit = idea.title.toLowerCase().includes(q)
+        || idea.body.toLowerCase().includes(q)
+        || idea.tags.some(t => t.toLowerCase().includes(q))
+        || (CAT_LABELS[idea.category] || '').includes(q);
+      if (!hit) return false;
+    }
+    return true;
+  }).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+}
+
+function setFilter(el, filter) {
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
+  currentFilter = filter;
+
+  const titles = {
+    all: 'すべてのアイデア',
+    idea: 'アイデア',
+    draft: '下書き',
+    published: '公開済み',
+    'cat:philosophy': '哲学・思想',
+    'cat:society': '社会・政治',
+    'cat:science': '科学・技術',
+    'cat:culture': '文化・芸術',
+    'cat:personal': '個人・日常',
+  };
+  document.getElementById('panelTitle').textContent = titles[filter] || 'アイデア';
+  renderList();
+}
+
+function handleSearch() {
+  searchQuery = document.getElementById('globalSearch').value;
+  renderList();
+}
+
+// ── Render ──
+function renderList() {
+  const filtered = getFiltered();
+  const list = document.getElementById('ideasList');
+  document.getElementById('ideaCount').textContent = filtered.length + '件';
+
+  if (filtered.length === 0) {
+    list.innerHTML = `<div class="no-results">${searchQuery ? '「' + searchQuery + '」に一致するアイデアはありません' : 'アイデアがありません'}</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(idea => {
+    const excerpt = idea.body.replace(/\n/g, ' ').trim();
+    const isSelected = idea.id === currentId;
+    const dateStr = formatDate(idea.updatedAt);
+    const tags = idea.tags.slice(0, 3).map(t =>
+      `<span class="tag-chip">${esc(t)}</span>`
+    ).join('');
+    return `
+      <div class="idea-card ${isSelected ? 'selected' : ''}" onclick="selectIdea('${idea.id}')">
+        <div class="idea-card-header">
+          <div class="idea-card-title">${esc(idea.title || '無題')}</div>
+          <span class="status-badge status-${idea.status}">${statusIcon(idea.status)}</span>
+        </div>
+        ${excerpt ? `<div class="idea-card-excerpt">${esc(excerpt)}</div>` : ''}
+        <div class="idea-card-footer">
+          ${tags}
+          <span class="idea-date">${dateStr}</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  updateCounts();
+}
+
+function updateCounts() {
+  document.getElementById('cnt-all').textContent = ideas.length;
+  document.getElementById('cnt-idea').textContent = ideas.filter(i => i.status === 'idea').length;
+  document.getElementById('cnt-draft').textContent = ideas.filter(i => i.status === 'draft').length;
+  document.getElementById('cnt-published').textContent = ideas.filter(i => i.status === 'published').length;
+  ['philosophy', 'society', 'science', 'culture', 'personal'].forEach(cat => {
+    document.getElementById('cnt-cat-' + cat).textContent = ideas.filter(i => i.category === cat).length;
+  });
+}
+
+function statusIcon(s) {
+  return { idea: '💡', draft: '📝', published: '✅' }[s] || s;
+}
+
+function formatDate(iso) {
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = (now - d) / 1000;
+  if (diff < 60) return 'たった今';
+  if (diff < 3600) return Math.floor(diff / 60) + '分前';
+  if (diff < 86400) return Math.floor(diff / 3600) + '時間前';
+  if (diff < 86400 * 7) return Math.floor(diff / 86400) + '日前';
+  return d.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Editor ──
+function selectIdea(id) {
+  if (isDirty && currentId) {
+    saveCurrentIdea(true);
+  }
+  currentId = id;
+  const idea = ideas.find(i => i.id === id);
+  if (!idea) return;
+
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('editorContent').style.display = 'flex';
+
+  document.getElementById('editorTitle').value = idea.title;
+  document.getElementById('editorStatus').value = idea.status;
+  document.getElementById('editorCategory').value = idea.category;
+  document.getElementById('editorBody').value = idea.body;
+  renderTagChips(idea.tags);
+  updateCharCount();
+  setStatus('保存済み — ' + formatDate(idea.updatedAt));
+  isDirty = false;
+  renderList();
+}
+
+function renderTagChips(tags) {
+  const wrap = document.getElementById('tagChips');
+  wrap.innerHTML = tags.map(t =>
+    `<span class="tag-chip-removable">${esc(t)}<button onclick="removeTag('${esc(t)}')" title="削除">×</button></span>`
+  ).join('');
+}
+
+function handleTagInput(e) {
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault();
+    const val = e.target.value.trim().replace(/,$/,'');
+    if (!val) return;
+    const idea = ideas.find(i => i.id === currentId);
+    if (!idea) return;
+    if (!idea.tags.includes(val)) {
+      idea.tags.push(val);
+      renderTagChips(idea.tags);
+      markDirty();
+    }
+    e.target.value = '';
+  }
+}
+
+function removeTag(tag) {
+  const idea = ideas.find(i => i.id === currentId);
+  if (!idea) return;
+  idea.tags = idea.tags.filter(t => t !== tag);
+  renderTagChips(idea.tags);
+  markDirty();
+}
+
+function markDirty() {
+  isDirty = true;
+  setStatus('未保存の変更あり...');
+  updateCharCount();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => saveCurrentIdea(true), 2000);
+}
+
+function updateCharCount() {
+  const body = document.getElementById('editorBody').value;
+  document.getElementById('charCount').textContent = body.length + '文字';
+}
+
+function setStatus(msg) {
+  document.getElementById('saveStatus').textContent = msg;
+}
+
+function saveCurrentIdea(silent = false) {
+  if (!currentId) return;
+  const idea = ideas.find(i => i.id === currentId);
+  if (!idea) return;
+
+  idea.title = document.getElementById('editorTitle').value.trim() || '無題';
+  idea.status = document.getElementById('editorStatus').value;
+  idea.category = document.getElementById('editorCategory').value;
+  idea.body = document.getElementById('editorBody').value;
+  idea.updatedAt = new Date().toISOString();
+
+  save();
+  isDirty = false;
+  setStatus('保存済み — ' + formatDate(idea.updatedAt));
+  renderList();
+}
+
+function deleteCurrentIdea() {
+  if (!currentId) return;
+  const idea = ideas.find(i => i.id === currentId);
+  if (!idea) return;
+  if (!confirm(`「${idea.title}」を削除しますか？`)) return;
+  ideas = ideas.filter(i => i.id !== currentId);
+  currentId = null;
+  save();
+  document.getElementById('emptyState').style.display = 'flex';
+  document.getElementById('editorContent').style.display = 'none';
+  isDirty = false;
+  renderList();
+}
+
+// ── New Idea Modal ──
+function openNewIdeaModal() {
+  document.getElementById('newTitle').value = '';
+  document.getElementById('newCategory').value = 'uncategorized';
+  document.getElementById('newStatus').value = 'idea';
+  document.getElementById('newIdeaModal').classList.add('open');
+  setTimeout(() => document.getElementById('newTitle').focus(), 50);
+}
+
+function closeNewIdeaModal() {
+  document.getElementById('newIdeaModal').classList.remove('open');
+}
+
+function createIdea() {
+  const title = document.getElementById('newTitle').value.trim();
+  if (!title) {
+    document.getElementById('newTitle').focus();
+    return;
+  }
+  const idea = {
+    id: uid(),
+    title,
+    status: document.getElementById('newStatus').value,
+    category: document.getElementById('newCategory').value,
+    tags: [],
+    body: '',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  ideas.unshift(idea);
+  save();
+  closeNewIdeaModal();
+  renderList();
+  selectIdea(idea.id);
+  setTimeout(() => document.getElementById('editorBody').focus(), 100);
+}
+
+// Close modal on overlay click
+document.getElementById('newIdeaModal').addEventListener('click', function(e) {
+  if (e.target === this) closeNewIdeaModal();
+});
+
+// Keyboard shortcut: Cmd/Ctrl+S to save
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+    e.preventDefault();
+    saveCurrentIdea();
+  }
+  if (e.key === 'Escape') closeNewIdeaModal();
+});
+
+// ── Init ──
+renderList();
+</script>
+</body>
+</html>
