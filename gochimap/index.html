@@ -509,7 +509,7 @@ async function initMap() {
   markerLib = await google.maps.importLibrary('marker');
   const start = records.length
     ? { lat: records[records.length - 1].lat, lng: records[records.length - 1].lng }
-    : { lat: 35.681236, lng: 139.767125 }; // Tokyo Station
+    : { lat: 34.66512, lng: 133.91928 }; // Okayama Station
   map = new Map(document.getElementById('map'), {
     center: start, zoom: records.length ? 14 : 12,
     mapId: 'DEMO_MAP_ID',
