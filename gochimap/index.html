@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gochi Map">
+<meta name="theme-color" content="#1b1410">
+<title>Gochi Map — 食べ歩き備忘録</title>
+<link rel="manifest" href='data:application/manifest+json,{"name":"Gochi Map","short_name":"GochiMap","display":"standalone","background_color":"%231b1410","theme_color":"%231b1410","start_url":"./","icons":[{"src":"data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%23e8894a%22/%3E%3Ctext x=%2250%22 y=%2270%22 font-size=%2260%22 text-anchor=%22middle%22%3E%F0%9F%8D%9C%3C/text%3E%3C/svg%3E","sizes":"any","type":"image/svg+xml"}]}'>
+<style>
+  :root {
+    --bg: #1b1410;
+    --surface: #241a14;
+    --surface2: #2e221a;
+    --border: #3d2e22;
+    --accent: #e8894a;
+    --accent2: #f4a869;
+    --text: #f2e9e2;
+    --muted: #a08d7d;
+    --danger: #d16a5c;
+    --gold: #f4b400;
+    --green: #4caf72;
+    --blue: #5b9bd5;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+  }
+  button { font-family: inherit; cursor: pointer; }
+  input, textarea, select { font-family: inherit; font-size: 16px; }
+
+  /* ---------- Setup / API key screen ---------- */
+  #setup {
+    position: fixed; inset: 0; z-index: 1000;
+    background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px; padding-top: calc(20px + var(--safe-top));
+    overflow-y: auto;
+  }
+  .setup-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 18px; padding: 26px 22px; max-width: 440px; width: 100%;
+  }
+  .setup-card h1 { font-size: 24px; margin-bottom: 6px; }
+  .setup-card .sub { color: var(--muted); font-size: 14px; margin-bottom: 20px; line-height: 1.6; }
+  .setup-card label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .setup-card input {
+    width: 100%; padding: 13px 14px; border-radius: 11px;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+  }
+  .setup-card input:focus { outline: none; border-color: var(--accent); }
+  .btn-primary {
+    width: 100%; margin-top: 16px; padding: 14px; border: none; border-radius: 11px;
+    background: var(--accent); color: #1b1410; font-weight: 700; font-size: 16px;
+  }
+  .btn-primary:active { background: var(--accent2); }
+  details.help { margin-top: 18px; font-size: 13px; color: var(--muted); }
+  details.help summary { cursor: pointer; color: var(--accent2); font-weight: 600; }
+  details.help ol { margin: 12px 0 0 18px; line-height: 1.9; }
+  details.help a { color: var(--accent2); }
+  details.help code { background: var(--surface2); padding: 1px 6px; border-radius: 5px; color: var(--accent2); }
+
+  /* ---------- App shell ---------- */
+  #app { display: none; flex-direction: column; height: 100dvh; }
+  header {
+    display: flex; align-items: center; gap: 8px;
+    padding: calc(10px + var(--safe-top)) 14px 10px;
+    background: var(--surface); border-bottom: 1px solid var(--border); z-index: 5;
+  }
+  header .logo { font-size: 18px; font-weight: 800; letter-spacing: .5px; }
+  header .logo span { color: var(--accent); }
+  header .spacer { flex: 1; }
+  .icon-btn {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    width: 38px; height: 38px; border-radius: 10px; font-size: 17px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .icon-btn:active { background: var(--border); }
+  .icon-btn.armed { background: var(--accent); border-color: var(--accent); color: #1b1410; }
+
+  #map { flex: 1 1 45%; width: 100%; background: var(--surface2); min-height: 180px; }
+
+  /* filter bar */
+  #filters {
+    display: flex; gap: 7px; overflow-x: auto; padding: 9px 12px;
+    background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    scrollbar-width: none; flex-shrink: 0;
+  }
+  #filters::-webkit-scrollbar { display: none; }
+  .chip {
+    flex-shrink: 0; padding: 6px 13px; border-radius: 20px; font-size: 13px;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--muted); white-space: nowrap;
+  }
+  .chip.active { background: var(--accent); border-color: var(--accent); color: #1b1410; font-weight: 700; }
+
+  /* list */
+  #list { flex: 1 1 55%; overflow-y: auto; padding: 10px 12px calc(90px + var(--safe-bottom)); -webkit-overflow-scrolling: touch; }
+  .empty { text-align: center; color: var(--muted); padding: 50px 20px; line-height: 1.8; font-size: 14px; }
+  .card {
+    display: flex; gap: 12px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 11px; margin-bottom: 10px;
+  }
+  .card:active { background: var(--surface2); }
+  .card .thumb {
+    width: 74px; height: 74px; border-radius: 10px; object-fit: cover; flex-shrink: 0;
+    background: var(--surface2); display: flex; align-items: center; justify-content: center; font-size: 30px;
+  }
+  .card .body { flex: 1; min-width: 0; }
+  .card .name { font-weight: 700; font-size: 15px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .meta { font-size: 12px; color: var(--muted); margin-bottom: 5px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .card .memo { font-size: 13px; color: var(--text); opacity: .85; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.5; }
+  .card .tagline { margin-top: 6px; display: flex; gap: 5px; flex-wrap: wrap; }
+  .minitag { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--surface2); color: var(--accent2); border: 1px solid var(--border); }
+  .stars { color: var(--gold); letter-spacing: 1px; font-size: 13px; }
+  .stars .off { color: var(--border); }
+
+  /* FAB */
+  #fab {
+    position: fixed; right: 18px; bottom: calc(18px + var(--safe-bottom)); z-index: 20;
+    width: 60px; height: 60px; border-radius: 50%; border: none;
+    background: var(--accent); color: #1b1410; font-size: 32px; font-weight: 300;
+    box-shadow: 0 6px 18px rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center;
+  }
+  #fab:active { background: var(--accent2); }
+
+  /* ---------- Modal / sheet ---------- */
+  .sheet-backdrop {
+    position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.6);
+    display: none; align-items: flex-end; justify-content: center;
+  }
+  .sheet-backdrop.open { display: flex; }
+  .sheet {
+    background: var(--bg); width: 100%; max-width: 560px; max-height: 92dvh;
+    border-radius: 20px 20px 0 0; border: 1px solid var(--border); border-bottom: none;
+    display: flex; flex-direction: column; overflow: hidden;
+    animation: slideup .22s ease;
+  }
+  @keyframes slideup { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .sheet-head {
+    display: flex; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .sheet-head h2 { font-size: 17px; flex: 1; }
+  .sheet-head .close { background: none; border: none; color: var(--muted); font-size: 26px; line-height: 1; padding: 0 4px; }
+  .sheet-body { overflow-y: auto; padding: 16px calc(16px) calc(24px + var(--safe-bottom)); -webkit-overflow-scrolling: touch; }
+
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 7px; }
+  .field input[type=text], .field input[type=date], .field textarea, .field select {
+    width: 100%; padding: 12px 13px; border-radius: 11px;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+  }
+  .field input:focus, .field textarea:focus, .field select:focus { outline: none; border-color: var(--accent); }
+  .field textarea { resize: vertical; min-height: 84px; line-height: 1.6; }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 5px; }
+
+  /* place autocomplete host */
+  #pacHost { width: 100%; }
+  gmp-place-autocomplete { width: 100%; }
+
+  /* star input */
+  .star-input { display: flex; gap: 4px; font-size: 34px; }
+  .star-input span { color: var(--border); transition: color .1s; }
+  .star-input span.on { color: var(--gold); }
+
+  /* photo picker */
+  .photo-grid { display: flex; gap: 8px; flex-wrap: wrap; }
+  .photo-grid .ph {
+    width: 78px; height: 78px; border-radius: 10px; object-fit: cover; position: relative; background: var(--surface2);
+  }
+  .photo-wrap { position: relative; width: 78px; height: 78px; }
+  .photo-wrap .del {
+    position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--danger); color: #fff; border: 2px solid var(--bg); font-size: 13px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .add-photo {
+    width: 78px; height: 78px; border-radius: 10px; border: 1.5px dashed var(--border);
+    background: var(--surface2); color: var(--muted); font-size: 26px;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .row2 { display: flex; gap: 12px; }
+  .row2 > .field { flex: 1; }
+
+  .save-bar { padding: 4px 0 0; }
+  .btn-save {
+    width: 100%; padding: 15px; border: none; border-radius: 12px;
+    background: var(--accent); color: #1b1410; font-weight: 800; font-size: 16px;
+  }
+  .btn-save:active { background: var(--accent2); }
+  .btn-danger-text { width: 100%; margin-top: 12px; padding: 12px; background: none; border: none; color: var(--danger); font-size: 14px; }
+
+  /* ---------- Detail view ---------- */
+  .detail-photos { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 14px; scrollbar-width: none; }
+  .detail-photos::-webkit-scrollbar { display: none; }
+  .detail-photos img { height: 190px; border-radius: 12px; object-fit: cover; flex-shrink: 0; }
+  .detail-title { font-size: 21px; font-weight: 800; margin-bottom: 6px; }
+  .detail-addr { font-size: 13px; color: var(--muted); margin-bottom: 14px; line-height: 1.5; }
+  .rating-cmp { display: flex; gap: 22px; margin-bottom: 16px; padding: 14px; background: var(--surface); border-radius: 12px; border: 1px solid var(--border); }
+  .rating-cmp .col .lbl { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .rating-cmp .col .val { font-size: 20px; font-weight: 700; }
+  .rating-cmp .big-stars { font-size: 18px; color: var(--gold); letter-spacing: 2px; }
+  .detail-section { margin-bottom: 16px; }
+  .detail-section h3 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 7px; }
+  .detail-review { font-size: 15px; line-height: 1.8; white-space: pre-wrap; }
+  .detail-meta { font-size: 13px; color: var(--text); opacity: .9; }
+  .gmaps-link { display: inline-block; margin-top: 6px; color: var(--accent2); font-size: 14px; text-decoration: none; }
+
+  .toast {
+    position: fixed; bottom: calc(90px + var(--safe-bottom)); left: 50%; transform: translateX(-50%);
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    padding: 11px 18px; border-radius: 24px; font-size: 14px; z-index: 500; opacity: 0;
+    transition: opacity .2s, transform .2s; pointer-events: none; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+
+  .maptip {
+    position: absolute; left: 50%; transform: translateX(-50%); top: 8px;
+    background: rgba(27,20,16,.9); border: 1px solid var(--border); color: var(--accent2);
+    font-size: 12px; padding: 6px 12px; border-radius: 20px; z-index: 4; pointer-events: none;
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== Setup screen ===== -->
+<div id="setup">
+  <div class="setup-card">
+    <h1>🍜 Gochi Map</h1>
+    <p class="sub">食べ歩きの備忘録マップ。<br>地図に「行った店」を、自分の感想と写真つきで残していけます。まずは Google Maps のAPIキーを入力してください（この端末内に保存され、外部には送信されません）。</p>
+    <label for="keyInput">Google Maps API キー</label>
+    <input id="keyInput" type="text" placeholder="AIza..." autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button class="btn-primary" id="saveKeyBtn">はじめる</button>
+
+    <details class="help">
+      <summary>APIキーの取り方（無料枠あり・約5分）</summary>
+      <ol>
+        <li><a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a> を開いてログイン</li>
+        <li>上部でプロジェクトを新規作成（例: <code>gochi-map</code>）</li>
+        <li>「APIとサービス」→「ライブラリ」で次の2つを<b>有効化</b>:<br><code>Maps JavaScript API</code> と <code>Places API (New)</code></li>
+        <li>「APIとサービス」→「認証情報」→「認証情報を作成」→「APIキー」</li>
+        <li>作られたキーをコピーして上の欄に貼り付け</li>
+        <li>（推奨）そのキーの「アプリケーションの制限」で<b>ウェブサイト</b>を選び、このページのURLを許可に追加すると安全です</li>
+      </ol>
+      <p style="margin-top:10px">※ 利用には請求先アカウントの登録が必要ですが、Google Maps には毎月の無料枠があり、個人利用の範囲ならほぼ無料で使えます。</p>
+    </details>
+  </div>
+</div>
+
+<!-- ===== App ===== -->
+<div id="app">
+  <header>
+    <div class="logo">Gochi<span>Map</span></div>
+    <div class="spacer"></div>
+    <button class="icon-btn" id="pinModeBtn" title="地図タップで追加">📍</button>
+    <button class="icon-btn" id="importBtn" title="読み込み">📥</button>
+    <button class="icon-btn" id="exportBtn" title="書き出し">📤</button>
+    <button class="icon-btn" id="settingsBtn" title="設定">⚙️</button>
+  </header>
+
+  <div style="position:relative; flex:1 1 45%; display:flex; min-height:180px;">
+    <div id="map"></div>
+    <div class="maptip" id="maptip">地図をタップして店を追加</div>
+  </div>
+
+  <div id="filters"></div>
+
+  <div id="list"></div>
+
+  <button id="fab">＋</button>
+</div>
+
+<!-- ===== Edit sheet ===== -->
+<div class="sheet-backdrop" id="editBackdrop">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2 id="editTitle">お店を追加</h2>
+      <button class="close" data-close="editBackdrop">×</button>
+    </div>
+    <div class="sheet-body">
+      <div class="field">
+        <label>お店を検索</label>
+        <div id="pacHost"></div>
+        <div class="hint">検索して選ぶか、地図をタップ / 下に直接入力してもOK</div>
+      </div>
+      <div class="field">
+        <label>店名</label>
+        <input type="text" id="fName" placeholder="例: 麺屋 ○○">
+      </div>
+      <div class="field">
+        <label>住所・場所メモ</label>
+        <input type="text" id="fAddr" placeholder="任意">
+      </div>
+      <div class="field">
+        <label>自分の評価</label>
+        <div class="star-input" id="starInput">
+          <span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span>
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>訪問日</label>
+          <input type="date" id="fDate">
+        </div>
+        <div class="field">
+          <label>旅行名（任意）</label>
+          <input type="text" id="fTrip" placeholder="例: 京都旅行" list="tripList">
+          <datalist id="tripList"></datalist>
+        </div>
+      </div>
+      <div class="field">
+        <label>タグ（カンマ区切り）</label>
+        <input type="text" id="fTags" placeholder="例: ラーメン, 夜, 一人">
+      </div>
+      <div class="field">
+        <label>一言メモ</label>
+        <input type="text" id="fMemo" placeholder="ぱっと見返す用の短い感想">
+      </div>
+      <div class="field">
+        <label>感想（じっくり）</label>
+        <textarea id="fReview" placeholder="味・雰囲気・また来たいか など自由に"></textarea>
+      </div>
+      <div class="field">
+        <label>写真</label>
+        <div class="photo-grid" id="photoGrid">
+          <label class="add-photo">＋
+            <input type="file" id="photoInput" accept="image/*" multiple style="display:none">
+          </label>
+        </div>
+      </div>
+      <div class="save-bar">
+        <button class="btn-save" id="saveRecordBtn">保存する</button>
+        <button class="btn-danger-text" id="deleteRecordBtn" style="display:none">この記録を削除</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Detail sheet ===== -->
+<div class="sheet-backdrop" id="detailBackdrop">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2>記録</h2>
+      <button class="close" data-close="detailBackdrop">×</button>
+    </div>
+    <div class="sheet-body" id="detailBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<input type="file" id="importFile" accept="application/json,.json" style="display:none">
+
+<script>
+'use strict';
+
+/* ============================================================
+   Storage: IndexedDB (records with photo blobs) + localStorage (key)
+   ============================================================ */
+const KEY_LS = 'gochimap.apikey';
+const DB_NAME = 'gochimap';
+const STORE = 'records';
+let db = null;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      if (!d.objectStoreNames.contains(STORE)) {
+        d.createObjectStore(STORE, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function tx(mode) { return db.transaction(STORE, mode).objectStore(STORE); }
+function dbGetAll() {
+  return new Promise((res, rej) => { const r = tx('readonly').getAll(); r.onsuccess = () => res(r.result || []); r.onerror = () => rej(r.error); });
+}
+function dbPut(rec) {
+  return new Promise((res, rej) => { const r = tx('readwrite').put(rec); r.onsuccess = () => res(); r.onerror = () => rej(r.error); });
+}
+function dbDelete(id) {
+  return new Promise((res, rej) => { const r = tx('readwrite').delete(id); r.onsuccess = () => res(); r.onerror = () => rej(r.error); });
+}
+
+/* ============================================================
+   App state
+   ============================================================ */
+let records = [];
+let activeFilter = { type: 'all', value: null }; // all | tag | trip
+let map, markerLib, markers = [];
+let editState = null; // current record being edited/created
+let pendingLatLng = null; // from map click
+let addMode = false;
+
+/* ============================================================
+   Google Maps loader (dynamic, key from storage)
+   ============================================================ */
+function loadGoogleMaps(key) {
+  return new Promise((resolve, reject) => {
+    if (window.google && window.google.maps) return resolve();
+    window.gm_authFailure = () => reject(new Error('auth'));
+    ((g) => {
+      let p, loaded;
+      const d = document, s = 'script';
+      const api = g.key;
+      window.google = window.google || {};
+      const params = new URLSearchParams({ key: api, v: 'weekly', libraries: 'places,marker', loading: 'async' });
+      const el = d.createElement(s);
+      el.src = 'https://maps.googleapis.com/maps/api/js?' + params.toString();
+      el.async = true;
+      el.onerror = () => reject(new Error('load'));
+      el.onload = () => resolve();
+      d.head.appendChild(el);
+    })({ key });
+  });
+}
+
+/* ============================================================
+   Init
+   ============================================================ */
+window.addEventListener('DOMContentLoaded', async () => {
+  db = await openDB();
+  const key = localStorage.getItem(KEY_LS);
+  if (key) { startApp(key); }
+  document.getElementById('saveKeyBtn').addEventListener('click', () => {
+    const k = document.getElementById('keyInput').value.trim();
+    if (!k) { toast('キーを入力してください'); return; }
+    localStorage.setItem(KEY_LS, k);
+    startApp(k);
+  });
+  wireStaticHandlers();
+});
+
+async function startApp(key) {
+  try {
+    await loadGoogleMaps(key);
+  } catch (e) {
+    document.getElementById('setup').style.display = 'flex';
+    if (e.message === 'auth') toast('キーが無効か、APIが有効化されていません');
+    else toast('地図の読み込みに失敗しました');
+    return;
+  }
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  await initMap();
+  records = await dbGetAll();
+  renderFilters();
+  renderList();
+  renderMarkers();
+}
+
+/* ============================================================
+   Map
+   ============================================================ */
+async function initMap() {
+  const { Map } = await google.maps.importLibrary('maps');
+  markerLib = await google.maps.importLibrary('marker');
+  const start = records.length
+    ? { lat: records[records.length - 1].lat, lng: records[records.length - 1].lng }
+    : { lat: 35.681236, lng: 139.767125 }; // Tokyo Station
+  map = new Map(document.getElementById('map'), {
+    center: start, zoom: records.length ? 14 : 12,
+    mapId: 'DEMO_MAP_ID',
+    disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy',
+    clickableIcons: false,
+  });
+  map.addListener('click', (e) => {
+    if (!addMode) return;
+    pendingLatLng = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+    addMode = false;
+    document.getElementById('maptip').style.display = 'none';
+    document.getElementById('pinModeBtn').classList.remove('armed');
+    openEdit(null, pendingLatLng);
+    pendingLatLng = null;
+  });
+}
+
+function pinColor(rating) {
+  if (rating >= 5) return '#f4b400';
+  if (rating >= 4) return '#4caf72';
+  if (rating >= 3) return '#5b9bd5';
+  if (rating >= 2) return '#c98b3a';
+  if (rating >= 1) return '#d16a5c';
+  return '#a08d7d';
+}
+
+function renderMarkers() {
+  markers.forEach(m => m.map = null);
+  markers = [];
+  if (!map || !markerLib) return;
+  const shown = filteredRecords();
+  const bounds = new google.maps.LatLngBounds();
+  shown.forEach(r => {
+    const pin = new markerLib.PinElement({
+      background: pinColor(r.myRating),
+      borderColor: '#1b1410',
+      glyphColor: '#1b1410',
+      glyph: r.myRating ? String(r.myRating) : '',
+    });
+    const marker = new markerLib.AdvancedMarkerElement({
+      map, position: { lat: r.lat, lng: r.lng }, content: pin.element, title: r.name,
+    });
+    marker.addListener('gmp-click', () => openDetail(r.id));
+    marker.addListener('click', () => openDetail(r.id));
+    markers.push(marker);
+    bounds.extend({ lat: r.lat, lng: r.lng });
+  });
+  if (shown.length === 1) { map.setCenter({ lat: shown[0].lat, lng: shown[0].lng }); map.setZoom(15); }
+  else if (shown.length > 1) { map.fitBounds(bounds, 60); }
+}
+
+/* ============================================================
+   Filters
+   ============================================================ */
+function allTags() {
+  const s = new Set();
+  records.forEach(r => (r.tags || []).forEach(t => s.add(t)));
+  return [...s];
+}
+function allTrips() {
+  const s = new Set();
+  records.forEach(r => { if (r.trip) s.add(r.trip); });
+  return [...s];
+}
+function renderFilters() {
+  const el = document.getElementById('filters');
+  el.innerHTML = '';
+  const mk = (label, type, value) => {
+    const c = document.createElement('button');
+    c.className = 'chip' + (activeFilter.type === type && activeFilter.value === value ? ' active' : '');
+    c.textContent = label;
+    c.onclick = () => { activeFilter = { type, value }; renderFilters(); renderList(); renderMarkers(); };
+    return c;
+  };
+  el.appendChild(mk('すべて (' + records.length + ')', 'all', null));
+  allTrips().forEach(t => el.appendChild(mk('🧳 ' + t, 'trip', t)));
+  allTags().forEach(t => el.appendChild(mk('#' + t, 'tag', t)));
+}
+function filteredRecords() {
+  let rs = records.slice();
+  if (activeFilter.type === 'tag') rs = rs.filter(r => (r.tags || []).includes(activeFilter.value));
+  else if (activeFilter.type === 'trip') rs = rs.filter(r => r.trip === activeFilter.value);
+  rs.sort((a, b) => (b.visitedDate || '').localeCompare(a.visitedDate || '') || b.createdAt - a.createdAt);
+  return rs;
+}
+
+/* ============================================================
+   List
+   ============================================================ */
+function starStr(n) {
+  n = n || 0;
+  let s = '';
+  for (let i = 1; i <= 5; i++) s += i <= n ? '★' : '<span class="off">★</span>';
+  return s;
+}
+function blobURL(blob) { return URL.createObjectURL(blob); }
+
+function renderList() {
+  const el = document.getElementById('list');
+  const rs = filteredRecords();
+  if (!rs.length) {
+    el.innerHTML = '<div class="empty">まだ記録がありません。<br>右下の ＋ から、行ったお店を追加してみましょう。</div>';
+    return;
+  }
+  el.innerHTML = '';
+  rs.forEach(r => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const thumb = (r.photos && r.photos.length)
+      ? `<img class="thumb" src="${blobURL(r.photos[0])}">`
+      : `<div class="thumb">🍽️</div>`;
+    const tags = (r.tags || []).map(t => `<span class="minitag">#${escapeHtml(t)}</span>`).join('');
+    const trip = r.trip ? `<span class="minitag">🧳 ${escapeHtml(r.trip)}</span>` : '';
+    card.innerHTML = `
+      ${thumb}
+      <div class="body">
+        <div class="name">${escapeHtml(r.name)}</div>
+        <div class="meta"><span class="stars">${starStr(r.myRating)}</span><span>${r.visitedDate || ''}</span></div>
+        <div class="memo">${escapeHtml(r.memo || r.review || '')}</div>
+        <div class="tagline">${trip}${tags}</div>
+      </div>`;
+    card.onclick = () => openDetail(r.id);
+    el.appendChild(card);
+  });
+}
+
+/* ============================================================
+   Edit sheet
+   ============================================================ */
+let pac = null;
+async function ensureAutocomplete() {
+  const host = document.getElementById('pacHost');
+  host.innerHTML = '';
+  try {
+    const { PlaceAutocompleteElement } = await google.maps.importLibrary('places');
+    pac = new PlaceAutocompleteElement();
+    pac.style.width = '100%';
+    host.appendChild(pac);
+    pac.addEventListener('gmp-select', async ({ placePrediction }) => {
+      const place = placePrediction.toPlace();
+      await place.fetchFields({ fields: ['displayName', 'formattedAddress', 'location', 'rating', 'id'] });
+      document.getElementById('fName').value = place.displayName || '';
+      document.getElementById('fAddr').value = place.formattedAddress || '';
+      editState.lat = place.location.lat();
+      editState.lng = place.location.lng();
+      editState.placeId = place.id || '';
+      editState.googleRating = place.rating || null;
+      if (map) { map.setCenter({ lat: editState.lat, lng: editState.lng }); map.setZoom(16); }
+      toast('場所を取得しました');
+    });
+  } catch (e) {
+    host.innerHTML = '<div class="hint">検索欄を読み込めませんでした。店名を直接入力してください。</div>';
+  }
+}
+
+let selectedRating = 0;
+function setRating(n) {
+  selectedRating = n;
+  document.querySelectorAll('#starInput span').forEach(s => {
+    s.classList.toggle('on', Number(s.dataset.v) <= n);
+  });
+}
+
+function openEdit(id, latlng) {
+  const isNew = !id;
+  if (isNew) {
+    editState = {
+      id: 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+      name: '', address: '', lat: latlng ? latlng.lat : null, lng: latlng ? latlng.lng : null,
+      placeId: '', googleRating: null, myRating: 0, memo: '', review: '',
+      tags: [], trip: '', visitedDate: todayStr(), photos: [], createdAt: Date.now(), updatedAt: Date.now(),
+    };
+  } else {
+    editState = JSON.parse(JSON.stringify(records.find(r => r.id === id)));
+    // photos are blobs; deep clone above drops them — restore refs
+    editState.photos = (records.find(r => r.id === id).photos || []).slice();
+  }
+  document.getElementById('editTitle').textContent = isNew ? 'お店を追加' : '記録を編集';
+  document.getElementById('fName').value = editState.name || '';
+  document.getElementById('fAddr').value = editState.address || '';
+  document.getElementById('fDate').value = editState.visitedDate || todayStr();
+  document.getElementById('fTrip').value = editState.trip || '';
+  document.getElementById('fTags').value = (editState.tags || []).join(', ');
+  document.getElementById('fMemo').value = editState.memo || '';
+  document.getElementById('fReview').value = editState.review || '';
+  setRating(editState.myRating || 0);
+  refreshTripList();
+  renderPhotoGrid();
+  document.getElementById('deleteRecordBtn').style.display = isNew ? 'none' : 'block';
+  ensureAutocomplete();
+  openSheet('editBackdrop');
+}
+
+function refreshTripList() {
+  const dl = document.getElementById('tripList');
+  dl.innerHTML = allTrips().map(t => `<option value="${escapeHtml(t)}">`).join('');
+}
+
+function renderPhotoGrid() {
+  const grid = document.getElementById('photoGrid');
+  // remove existing photo wraps (keep the add button label)
+  grid.querySelectorAll('.photo-wrap').forEach(n => n.remove());
+  const addBtn = grid.querySelector('.add-photo');
+  (editState.photos || []).forEach((blob, i) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'photo-wrap';
+    wrap.innerHTML = `<img class="ph" src="${blobURL(blob)}"><button class="del" data-i="${i}">×</button>`;
+    wrap.querySelector('.del').onclick = (ev) => {
+      ev.stopPropagation();
+      editState.photos.splice(i, 1);
+      renderPhotoGrid();
+    };
+    grid.insertBefore(wrap, addBtn);
+  });
+}
+
+async function handlePhotoFiles(files) {
+  for (const file of files) {
+    if (!file.type.startsWith('image/')) continue;
+    try {
+      const blob = await downscaleImage(file, 1600, 0.82);
+      editState.photos.push(blob);
+    } catch (e) {
+      editState.photos.push(file); // fallback: store original
+    }
+  }
+  renderPhotoGrid();
+}
+
+function downscaleImage(file, maxSize, quality) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if (width > maxSize || height > maxSize) {
+        if (width > height) { height = Math.round(height * maxSize / width); width = maxSize; }
+        else { width = Math.round(width * maxSize / height); height = maxSize; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error('blob')), 'image/jpeg', quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('img')); };
+    img.src = url;
+  });
+}
+
+async function saveRecord() {
+  const name = document.getElementById('fName').value.trim();
+  if (!name) { toast('店名を入力してください'); return; }
+  editState.name = name;
+  editState.address = document.getElementById('fAddr').value.trim();
+  editState.visitedDate = document.getElementById('fDate').value || todayStr();
+  editState.trip = document.getElementById('fTrip').value.trim();
+  editState.tags = document.getElementById('fTags').value.split(',').map(t => t.trim()).filter(Boolean);
+  editState.memo = document.getElementById('fMemo').value.trim();
+  editState.review = document.getElementById('fReview').value.trim();
+  editState.myRating = selectedRating;
+  editState.updatedAt = Date.now();
+  if (editState.lat == null || editState.lng == null) {
+    // no location chosen: place at current map center so it still appears
+    const c = map.getCenter();
+    editState.lat = c.lat(); editState.lng = c.lng();
+    toast('場所未指定のため地図中心に配置しました');
+  }
+  await dbPut(editState);
+  records = await dbGetAll();
+  closeSheet('editBackdrop');
+  renderFilters(); renderList(); renderMarkers();
+  toast('保存しました 🍜');
+}
+
+async function deleteRecord() {
+  if (!editState) return;
+  if (!confirm('この記録を削除しますか？')) return;
+  await dbDelete(editState.id);
+  records = await dbGetAll();
+  closeSheet('editBackdrop');
+  renderFilters(); renderList(); renderMarkers();
+  toast('削除しました');
+}
+
+/* ============================================================
+   Detail sheet
+   ============================================================ */
+function openDetail(id) {
+  const r = records.find(x => x.id === id);
+  if (!r) return;
+  const body = document.getElementById('detailBody');
+  const photos = (r.photos && r.photos.length)
+    ? `<div class="detail-photos">${r.photos.map(b => `<img src="${blobURL(b)}">`).join('')}</div>` : '';
+  const gcmp = r.googleRating
+    ? `<div class="col"><div class="lbl">Googleの評価</div><div class="val">★ ${r.googleRating.toFixed(1)}</div></div>` : '';
+  const tags = (r.tags || []).map(t => `<span class="minitag">#${escapeHtml(t)}</span>`).join(' ');
+  const trip = r.trip ? `<span class="minitag">🧳 ${escapeHtml(r.trip)}</span>` : '';
+  const mapsUrl = r.placeId
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(r.name)}&query_place_id=${r.placeId}`
+    : `https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lng}`;
+  body.innerHTML = `
+    ${photos}
+    <div class="detail-title">${escapeHtml(r.name)}</div>
+    <div class="detail-addr">${escapeHtml(r.address || '')}${r.visitedDate ? ' ・ 訪問: ' + r.visitedDate : ''}</div>
+    <div class="rating-cmp">
+      <div class="col"><div class="lbl">自分の評価</div><div class="big-stars">${starStr(r.myRating).replace(/<span class="off">★<\/span>/g, '☆')}</div></div>
+      ${gcmp}
+    </div>
+    ${(trip || tags) ? `<div class="detail-section"><div class="tagline">${trip} ${tags}</div></div>` : ''}
+    ${r.memo ? `<div class="detail-section"><h3>ひとことメモ</h3><div class="detail-meta">${escapeHtml(r.memo)}</div></div>` : ''}
+    ${r.review ? `<div class="detail-section"><h3>感想</h3><div class="detail-review">${escapeHtml(r.review)}</div></div>` : ''}
+    <a class="gmaps-link" href="${mapsUrl}" target="_blank" rel="noopener">📍 Googleマップで開く</a>
+    <div class="save-bar" style="margin-top:22px">
+      <button class="btn-save" id="editFromDetail">編集する</button>
+    </div>`;
+  document.getElementById('editFromDetail').onclick = () => { closeSheet('detailBackdrop'); openEdit(id); };
+  openSheet('detailBackdrop');
+}
+
+/* ============================================================
+   Export / Import (JSON, photos as base64)
+   ============================================================ */
+function blobToDataURL(blob) {
+  return new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(blob); });
+}
+async function dataURLToBlob(d) { return (await fetch(d)).blob(); }
+
+async function exportData() {
+  const out = [];
+  for (const r of records) {
+    const copy = Object.assign({}, r);
+    copy.photos = [];
+    for (const b of (r.photos || [])) copy.photos.push(await blobToDataURL(b));
+    out.push(copy);
+  }
+  const blob = new Blob([JSON.stringify({ app: 'gochimap', version: 1, exportedAt: new Date().toISOString(), records: out }, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'gochimap-backup-' + todayStr() + '.json';
+  a.click();
+  toast('書き出しました');
+}
+
+async function importData(file) {
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    const list = Array.isArray(data) ? data : data.records;
+    if (!Array.isArray(list)) throw new Error('format');
+    let n = 0;
+    for (const r of list) {
+      const rec = Object.assign({}, r);
+      const photos = [];
+      for (const p of (r.photos || [])) {
+        if (typeof p === 'string') photos.push(await dataURLToBlob(p));
+      }
+      rec.photos = photos;
+      if (!rec.id) rec.id = 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+      await dbPut(rec);
+      n++;
+    }
+    records = await dbGetAll();
+    renderFilters(); renderList(); renderMarkers();
+    toast(n + '件を読み込みました');
+  } catch (e) {
+    toast('読み込みに失敗しました');
+  }
+}
+
+/* ============================================================
+   Sheets / UI helpers
+   ============================================================ */
+function openSheet(id) { document.getElementById(id).classList.add('open'); }
+function closeSheet(id) { document.getElementById(id).classList.remove('open'); }
+let toastTimer;
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 1900);
+}
+function todayStr() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+function wireStaticHandlers() {
+  document.getElementById('fab').onclick = () => openEdit(null, pendingLatLng);
+  document.getElementById('saveRecordBtn').onclick = saveRecord;
+  document.getElementById('deleteRecordBtn').onclick = deleteRecord;
+  document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => closeSheet(b.dataset.close));
+  document.querySelectorAll('.sheet-backdrop').forEach(bd => {
+    bd.addEventListener('click', (e) => { if (e.target === bd) closeSheet(bd.id); });
+  });
+  document.querySelectorAll('#starInput span').forEach(s => {
+    s.onclick = () => setRating(Number(s.dataset.v));
+  });
+  document.getElementById('photoInput').onchange = (e) => { handlePhotoFiles(e.target.files); e.target.value = ''; };
+  document.getElementById('exportBtn').onclick = exportData;
+  document.getElementById('importBtn').onclick = () => document.getElementById('importFile').click();
+  document.getElementById('importFile').onchange = (e) => { if (e.target.files[0]) importData(e.target.files[0]); e.target.value = ''; };
+  document.getElementById('settingsBtn').onclick = () => {
+    if (confirm('APIキーを再設定しますか？（記録は消えません）')) {
+      localStorage.removeItem(KEY_LS);
+      location.reload();
+    }
+  };
+  document.getElementById('pinModeBtn').onclick = () => {
+    addMode = !addMode;
+    document.getElementById('pinModeBtn').classList.toggle('armed', addMode);
+    document.getElementById('maptip').style.display = addMode ? 'block' : 'none';
+    if (addMode) toast('地図をタップして場所を指定');
+  };
+}
+</script>
+</body>
+</html>
