@@ -423,24 +423,44 @@ async function requestPersistentStorage() {
    Google Maps loader (dynamic, key from storage)
    ============================================================ */
 function loadGoogleMaps(key) {
-  return new Promise((resolve, reject) => {
-    if (window.google && window.google.maps) return resolve();
-    window.gm_authFailure = () => reject(new Error('auth'));
-    ((g) => {
-      let p, loaded;
-      const d = document, s = 'script';
-      const api = g.key;
-      window.google = window.google || {};
-      const params = new URLSearchParams({ key: api, v: 'weekly', libraries: 'places,marker', loading: 'async' });
-      const el = d.createElement(s);
-      el.src = 'https://maps.googleapis.com/maps/api/js?' + params.toString();
-      el.async = true;
-      el.onerror = () => reject(new Error('load'));
-      el.onload = () => resolve();
-      d.head.appendChild(el);
-    })({ key });
-  });
+  if (window.google && window.google.maps && window.google.maps.importLibrary) return;
+  window.gm_authFailure = () => showFatal(
+    'APIキーが承認されませんでした。<br>Google Cloud で次を確認してください:<br>' +
+    '・<b>Maps JavaScript API</b> と <b>Places API (New)</b> が有効か<br>' +
+    '・お支払い（課金）が有効か<br>' +
+    '・キーに「ウェブサイトの制限」をかけている場合、<b>https://bn6zfmkmhm-cmd.github.io/*</b> が許可に入っているか'
+  );
+  // Official Google Maps JS API bootstrap loader (defines google.maps.importLibrary).
+  (g => {
+    var h, a, k, p = "The Google Maps JavaScript API", c = "google", l = "importLibrary",
+        q = "__ib__", m = document, b = window; b = b[c] || (b[c] = {});
+    var d = b.maps || (b.maps = {}), r = new Set(), e = new URLSearchParams(),
+        u = () => h || (h = new Promise(async (f, n) => {
+          a = m.createElement("script"); e.set("libraries", [...r] + "");
+          for (k in g) e.set(k.replace(/[A-Z]/g, t => "_" + t[0].toLowerCase()), g[k]);
+          e.set("callback", c + ".maps." + q);
+          a.src = "https://maps." + c + "apis.com/maps/api/js?" + e;
+          d[q] = f; a.onerror = () => h = n(Error(p + " could not load."));
+          a.nonce = m.querySelector("script[nonce]")?.nonce || ""; m.head.append(a);
+        }));
+    d[l] ? console.warn(p + " only loads once. Ignoring:", g)
+         : d[l] = (f, ...n) => r.add(f) && u().then(() => d[l](f, ...n));
+  })({ key, v: "weekly" });
 }
+
+function showFatal(msg) {
+  const m = document.getElementById('map');
+  if (!m) return;
+  m.innerHTML =
+    '<div style="padding:24px;height:100%;display:flex;flex-direction:column;gap:16px;' +
+    'align-items:center;justify-content:center;text-align:center;color:var(--text);' +
+    'font-size:14px;line-height:1.8;">' +
+    '<div style="font-size:34px">🗺️❓</div><div>' + msg + '</div>' +
+    '<button onclick="reconfigureKey()" style="padding:11px 18px;border:none;border-radius:10px;' +
+    'background:var(--accent);color:#1b1410;font-weight:700;font-size:15px;">APIキーを入れ直す</button>' +
+    '</div>';
+}
+function reconfigureKey() { localStorage.removeItem(KEY_LS); location.reload(); }
 
 /* ============================================================
    Init
@@ -459,22 +479,26 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 async function startApp(key) {
-  try {
-    await loadGoogleMaps(key);
-  } catch (e) {
-    document.getElementById('setup').style.display = 'flex';
-    if (e.message === 'auth') toast('キーが無効か、APIが有効化されていません');
-    else toast('地図の読み込みに失敗しました');
-    return;
-  }
+  loadGoogleMaps(key);
   document.getElementById('setup').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
   requestPersistentStorage();
-  await initMap();
-  records = await dbGetAll();
-  renderFilters();
-  renderList();
-  renderMarkers();
+  try {
+    await Promise.race([
+      initMap(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000)),
+    ]);
+    records = await dbGetAll();
+    renderFilters();
+    renderList();
+    renderMarkers();
+  } catch (e) {
+    console.error('init failed', e);
+    const why = e && e.message === 'timeout'
+      ? '地図の読み込みが完了しませんでした（通信状況、またはAPIキーの設定の可能性）。'
+      : '地図を初期化できませんでした（' + (e && e.message ? e.message : 'unknown') + '）。';
+    showFatal(why + '<br>APIキーの設定（API有効化・課金・キー制限）を確認して、入れ直してみてください。');
+  }
 }
 
 /* ============================================================
