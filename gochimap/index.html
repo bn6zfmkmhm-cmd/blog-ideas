@@ -266,7 +266,6 @@
     <button class="icon-btn" id="pinModeBtn" title="地図タップで追加">📍</button>
     <button class="icon-btn" id="importBtn" title="読み込み">📥</button>
     <button class="icon-btn" id="exportBtn" title="書き出し">📤</button>
-    <button class="icon-btn" id="settingsBtn" title="設定">⚙️</button>
   </header>
 
   <div style="position:relative; flex:1 1 45%; display:flex; min-height:180px;">
@@ -906,16 +905,14 @@ function wireStaticHandlers() {
   document.querySelectorAll('#starInput span').forEach(s => {
     s.onclick = () => setRating(Number(s.dataset.v));
   });
-  document.getElementById('photoInput').onchange = (e) => { handlePhotoFiles(e.target.files); e.target.value = ''; };
+  document.getElementById('photoInput').onchange = (e) => {
+    const files = Array.from(e.target.files); // snapshot before clearing the input
+    e.target.value = '';
+    handlePhotoFiles(files);
+  };
   document.getElementById('exportBtn').onclick = exportData;
   document.getElementById('importBtn').onclick = () => document.getElementById('importFile').click();
   document.getElementById('importFile').onchange = (e) => { if (e.target.files[0]) importData(e.target.files[0]); e.target.value = ''; };
-  document.getElementById('settingsBtn').onclick = () => {
-    if (confirm('APIキーを再設定しますか？（記録は消えません）')) {
-      localStorage.removeItem(KEY_LS);
-      location.reload();
-    }
-  };
   document.getElementById('pinModeBtn').onclick = () => {
     addMode = !addMode;
     document.getElementById('pinModeBtn').classList.toggle('armed', addMode);
