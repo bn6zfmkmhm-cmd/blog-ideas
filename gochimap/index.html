@@ -407,6 +407,19 @@ let pendingLatLng = null; // from map click
 let addMode = false;
 
 /* ============================================================
+   Persistent storage: ask the browser not to auto-evict our
+   saved API key and food records.
+   ============================================================ */
+async function requestPersistentStorage() {
+  try {
+    if (navigator.storage && navigator.storage.persist) {
+      const already = await navigator.storage.persisted();
+      if (!already) await navigator.storage.persist();
+    }
+  } catch (e) { /* not supported: ignore */ }
+}
+
+/* ============================================================
    Google Maps loader (dynamic, key from storage)
    ============================================================ */
 function loadGoogleMaps(key) {
@@ -456,6 +469,7 @@ async function startApp(key) {
   }
   document.getElementById('setup').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
+  requestPersistentStorage();
   await initMap();
   records = await dbGetAll();
   renderFilters();
