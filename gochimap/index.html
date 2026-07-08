@@ -320,8 +320,8 @@
         </div>
       </div>
       <div class="field">
-        <label>タグ（カンマ区切り）</label>
-        <input type="text" id="fTags" placeholder="例: ラーメン, 夜, 一人">
+        <label>タグ（「、」区切り）</label>
+        <input type="text" id="fTags" placeholder="例: ラーメン、夜、一人">
       </div>
       <div class="field">
         <label>一言メモ</label>
@@ -767,7 +767,7 @@ async function saveRecord() {
   editState.address = document.getElementById('fAddr').value.trim();
   editState.visitedDate = document.getElementById('fDate').value || todayStr();
   editState.trip = document.getElementById('fTrip').value.trim();
-  editState.tags = document.getElementById('fTags').value.split(',').map(t => t.trim()).filter(Boolean);
+  editState.tags = document.getElementById('fTags').value.split(/[、,，]/).map(t => t.trim()).filter(Boolean);
   editState.memo = document.getElementById('fMemo').value.trim();
   editState.review = document.getElementById('fReview').value.trim();
   editState.myRating = selectedRating;
