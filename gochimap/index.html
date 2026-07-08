@@ -90,6 +90,26 @@
 
   #map { flex: 1 1 45%; width: 100%; background: var(--surface2); min-height: 180px; }
 
+  /* search bar */
+  #searchBar {
+    display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+    background: var(--surface); border-top: 1px solid var(--border); flex-shrink: 0;
+  }
+  #searchBar .search-ic { font-size: 15px; opacity: .8; }
+  #searchInput {
+    flex: 1; min-width: 0; padding: 9px 12px; border-radius: 10px;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text); font-size: 15px;
+  }
+  #searchInput::placeholder { color: var(--muted); }
+  #searchInput:focus { outline: none; border-color: var(--accent); }
+  #searchInput::-webkit-search-cancel-button { -webkit-appearance: none; }
+  .search-clear {
+    flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--muted);
+    font-size: 17px; line-height: 1; display: flex; align-items: center; justify-content: center;
+  }
+  .search-clear:active { background: var(--border); }
+
   /* filter bar */
   #filters {
     display: flex; gap: 7px; overflow-x: auto; padding: 9px 12px;
@@ -273,6 +293,12 @@
     <div class="maptip" id="maptip">地図をタップして店を追加</div>
   </div>
 
+  <div id="searchBar">
+    <span class="search-ic">🔍</span>
+    <input id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="店名・タグ・感想で検索" autocomplete="off">
+    <button id="searchClear" class="search-clear" style="display:none">×</button>
+  </div>
+
   <div id="filters"></div>
 
   <div id="list"></div>
@@ -400,6 +426,7 @@ function dbDelete(id) {
    ============================================================ */
 let records = [];
 let activeFilter = { type: 'all', value: null }; // all | tag | trip
+let searchQuery = '';
 let map, markerLib, markers = [];
 let editState = null; // current record being edited/created
 let pendingLatLng = null; // from map click
@@ -591,6 +618,13 @@ function filteredRecords() {
   let rs = records.slice();
   if (activeFilter.type === 'tag') rs = rs.filter(r => (r.tags || []).includes(activeFilter.value));
   else if (activeFilter.type === 'trip') rs = rs.filter(r => r.trip === activeFilter.value);
+  if (searchQuery) {
+    rs = rs.filter(r => {
+      const hay = [r.name, r.memo, r.review, r.address, r.trip, ...(r.tags || [])]
+        .filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(searchQuery);
+    });
+  }
   rs.sort((a, b) => (b.visitedDate || '').localeCompare(a.visitedDate || '') || b.createdAt - a.createdAt);
   return rs;
 }
@@ -610,7 +644,10 @@ function renderList() {
   const el = document.getElementById('list');
   const rs = filteredRecords();
   if (!rs.length) {
-    el.innerHTML = '<div class="empty">まだ記録がありません。<br>右下の ＋ から、行ったお店を追加してみましょう。</div>';
+    const isFiltering = searchQuery || activeFilter.type !== 'all';
+    el.innerHTML = isFiltering
+      ? '<div class="empty">該当する記録がありませんでした。<br>検索語やタグを変えてみてください。</div>'
+      : '<div class="empty">まだ記録がありません。<br>右下の ＋ から、行ったお店を追加してみましょう。</div>';
     return;
   }
   el.innerHTML = '';
@@ -909,6 +946,21 @@ function wireStaticHandlers() {
     const files = Array.from(e.target.files); // snapshot before clearing the input
     e.target.value = '';
     handlePhotoFiles(files);
+  };
+  const searchInput = document.getElementById('searchInput');
+  const searchClear = document.getElementById('searchClear');
+  searchInput.addEventListener('input', () => {
+    searchQuery = searchInput.value.trim().toLowerCase();
+    searchClear.style.display = searchQuery ? 'flex' : 'none';
+    renderList();
+    renderMarkers();
+  });
+  searchClear.onclick = () => {
+    searchInput.value = '';
+    searchQuery = '';
+    searchClear.style.display = 'none';
+    renderList();
+    renderMarkers();
   };
   document.getElementById('exportBtn').onclick = exportData;
   document.getElementById('importBtn').onclick = () => document.getElementById('importFile').click();
