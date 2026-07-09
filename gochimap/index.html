@@ -87,6 +87,10 @@
   }
   .icon-btn:active { background: var(--border); }
   .icon-btn.armed { background: var(--accent); border-color: var(--accent); color: #1b1410; }
+  header .board-chip {
+    font-size: 11px; padding: 4px 10px; border-radius: 20px; white-space: nowrap;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--accent2);
+  }
 
   #map { flex: 1 1 45%; width: 100%; background: var(--surface2); min-height: 180px; }
 
@@ -282,8 +286,10 @@
 <div id="app">
   <header>
     <div class="logo">Gochi<span>Map</span></div>
+    <div class="board-chip" id="boardChip" style="display:none"></div>
     <div class="spacer"></div>
     <button class="icon-btn" id="pinModeBtn" title="地図タップで追加">📍</button>
+    <button class="icon-btn" id="shareBtn" title="共有ボード">👥</button>
     <button class="icon-btn" id="importBtn" title="読み込み">📥</button>
     <button class="icon-btn" id="exportBtn" title="書き出し">📤</button>
   </header>
@@ -356,7 +362,7 @@
         <label>感想（じっくり）</label>
         <textarea id="fReview" placeholder="味・雰囲気・また来たいか など自由に"></textarea>
       </div>
-      <div class="field">
+      <div class="field" id="photoField">
         <label>写真</label>
         <div class="photo-grid" id="photoGrid">
           <label class="add-photo">＋
@@ -364,6 +370,7 @@
           </label>
         </div>
       </div>
+      <div class="hint" id="boardPhotoHint" style="display:none; margin:-8px 0 16px;">📌 共有ボードでは写真はまだ共有されません（写真はプライベートマップでのみ保存できます）</div>
       <div class="save-bar">
         <button class="btn-save" id="saveRecordBtn">保存する</button>
         <button class="btn-danger-text" id="deleteRecordBtn" style="display:none">この記録を削除</button>
@@ -380,6 +387,17 @@
       <button class="close" data-close="detailBackdrop">×</button>
     </div>
     <div class="sheet-body" id="detailBody"></div>
+  </div>
+</div>
+
+<!-- ===== Share sheet ===== -->
+<div class="sheet-backdrop" id="shareBackdrop">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2>共有ボード</h2>
+      <button class="close" data-close="shareBackdrop">×</button>
+    </div>
+    <div class="sheet-body" id="shareBody"></div>
   </div>
 </div>
 
@@ -444,6 +462,136 @@ async function requestPersistentStorage() {
     }
   } catch (e) { /* not supported: ignore */ }
 }
+
+/* ============================================================
+   Shared board (Firestore) — optional realtime sharing with
+   friends via a shared passphrase ("board code"). No accounts;
+   anyone who knows the code can read/write that board.
+   Photos are not synced in this first version (text/data only).
+   ============================================================ */
+const BOARD_LS = 'gochimap.board';
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyA50_ljz8CY8ZVpIOrgHH9hfKiCpYre4PY",
+  authDomain: "gochimap-share.firebaseapp.com",
+  projectId: "gochimap-share",
+  storageBucket: "gochimap-share.firebasestorage.app",
+  messagingSenderId: "950189970831",
+  appId: "1:950189970831:web:838eb809a08d03134a7fa",
+};
+const FIREBASE_SDK_VERSION = "12.15.0";
+let boardCode = localStorage.getItem(BOARD_LS) || null;
+let firestoreDb = null, firestoreMod = null, boardUnsub = null;
+
+function inBoardMode() { return !!boardCode; }
+
+async function getFirestore() {
+  if (firestoreMod) return firestoreMod;
+  const base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
+  const [{ initializeApp }, fs] = await Promise.all([
+    import(base + 'firebase-app.js'),
+    import(base + 'firebase-firestore.js'),
+  ]);
+  const app = initializeApp(FIREBASE_CONFIG);
+  firestoreDb = fs.getFirestore(app);
+  firestoreMod = fs;
+  return fs;
+}
+
+function normalizeBoardCode(v) {
+  return (v || '').trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9_-]/g, '').slice(0, 40);
+}
+function randomBoardCode() { return 'board-' + Math.random().toString(36).slice(2, 8); }
+
+async function connectBoard(code) {
+  const fs = await getFirestore();
+  if (boardUnsub) { boardUnsub(); boardUnsub = null; }
+  const colRef = fs.collection(firestoreDb, 'boards', code, 'records');
+  boardUnsub = fs.onSnapshot(colRef, (snap) => {
+    records = snap.docs.map(d => Object.assign({ photos: [] }, d.data(), { id: d.id }));
+    renderFilters(); renderList(); renderMarkers();
+  }, (err) => {
+    console.error('board snapshot error', err);
+    toast('共有ボードとの通信でエラーが発生しました');
+  });
+}
+
+async function joinBoard(rawCode) {
+  const code = normalizeBoardCode(rawCode);
+  if (code.length < 3) { toast('合言葉は3文字以上の半角英数字で入力してください'); return; }
+  try {
+    await connectBoard(code);
+    boardCode = code;
+    localStorage.setItem(BOARD_LS, code);
+    updateBoardChip();
+    closeSheet('shareBackdrop');
+    toast('共有ボードに接続しました');
+  } catch (e) {
+    console.error('joinBoard failed', e);
+    toast('共有への接続に失敗しました（通信環境をご確認ください）');
+  }
+}
+
+async function leaveBoard() {
+  if (boardUnsub) { boardUnsub(); boardUnsub = null; }
+  boardCode = null;
+  localStorage.removeItem(BOARD_LS);
+  updateBoardChip();
+  records = await dbGetAll();
+  renderFilters(); renderList(); renderMarkers();
+  closeSheet('shareBackdrop');
+  toast('自分だけのマップに戻りました');
+}
+
+function updateBoardChip() {
+  const chip = document.getElementById('boardChip');
+  const btn = document.getElementById('shareBtn');
+  if (inBoardMode()) {
+    chip.textContent = '👥 ' + boardCode;
+    chip.style.display = 'inline-block';
+    btn.classList.add('armed');
+  } else {
+    chip.style.display = 'none';
+    btn.classList.remove('armed');
+  }
+}
+
+function renderShareSheet() {
+  const body = document.getElementById('shareBody');
+  if (inBoardMode()) {
+    body.innerHTML = `
+      <p class="sub" style="margin-bottom:16px">現在、下の合言葉でみんなと共有中です。同じ合言葉を仲間に伝えれば、同じマップに追加していけます。（写真はまだ共有されません）</p>
+      <div class="field">
+        <label>合言葉</label>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <input type="text" id="boardCodeDisplay" readonly value="${escapeHtml(boardCode)}" style="font-size:17px; font-weight:700;">
+          <button class="icon-btn" id="copyBoardBtn" title="コピー">📋</button>
+        </div>
+      </div>
+      <div class="save-bar">
+        <button class="btn-danger-text" id="leaveBoardBtn">共有をやめて自分だけのマップに戻る</button>
+      </div>`;
+    document.getElementById('copyBoardBtn').onclick = async () => {
+      try { await navigator.clipboard.writeText(boardCode); toast('コピーしました'); }
+      catch (e) { toast('コピーできませんでした'); }
+    };
+    document.getElementById('leaveBoardBtn').onclick = leaveBoard;
+  } else {
+    body.innerHTML = `
+      <p class="sub" style="margin-bottom:16px">仲間と同じ「合言葉」を使うと、1つのマップをみんなで編集できます。まだ写真は共有されません（お店情報・評価・感想などが共有されます）。</p>
+      <div class="field">
+        <label>合言葉（半角英数字・3〜30文字）</label>
+        <input type="text" id="boardCodeInput" placeholder="例: okayama-gohan" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
+      <div class="save-bar">
+        <button class="btn-save" id="joinBoardBtn">この合言葉で共有をはじめる</button>
+      </div>
+      <button class="btn-danger-text" id="randomBoardBtn" style="color:var(--accent2)">ランダムな合言葉を生成する</button>`;
+    document.getElementById('joinBoardBtn').onclick = () => joinBoard(document.getElementById('boardCodeInput').value);
+    document.getElementById('randomBoardBtn').onclick = () => { document.getElementById('boardCodeInput').value = randomBoardCode(); };
+  }
+}
+
+function openShareSheet() { renderShareSheet(); openSheet('shareBackdrop'); }
 
 /* ============================================================
    Google Maps loader (dynamic, key from storage)
@@ -514,7 +662,13 @@ async function startApp(key) {
       initMap(),
       new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000)),
     ]);
-    records = await dbGetAll();
+    if (boardCode) {
+      try { await connectBoard(boardCode); }
+      catch (e) { console.error('auto-reconnect failed', e); toast('共有ボードへの再接続に失敗しました'); records = await dbGetAll(); }
+    } else {
+      records = await dbGetAll();
+    }
+    updateBoardChip();
     renderFilters();
     renderList();
     renderMarkers();
@@ -734,6 +888,8 @@ function openEdit(id, latlng) {
   setRating(editState.myRating || 0);
   refreshTripList();
   renderPhotoGrid();
+  document.getElementById('photoField').style.display = inBoardMode() ? 'none' : 'block';
+  document.getElementById('boardPhotoHint').style.display = inBoardMode() ? 'block' : 'none';
   document.getElementById('deleteRecordBtn').style.display = isNew ? 'none' : 'block';
   ensureAutocomplete();
   openSheet('editBackdrop');
@@ -814,8 +970,21 @@ async function saveRecord() {
     editState.lat = c.lat(); editState.lng = c.lng();
     toast('場所未指定のため地図中心に配置しました');
   }
-  await dbPut(editState);
-  records = await dbGetAll();
+  if (inBoardMode()) {
+    try {
+      const fs = await getFirestore();
+      const data = Object.assign({}, editState);
+      delete data.photos; // not synced in shared boards yet
+      await fs.setDoc(fs.doc(firestoreDb, 'boards', boardCode, 'records', editState.id), data);
+    } catch (e) {
+      console.error('shared save failed', e);
+      toast('共有ボードへの保存に失敗しました');
+      return;
+    }
+  } else {
+    await dbPut(editState);
+    records = await dbGetAll();
+  }
   closeSheet('editBackdrop');
   renderFilters(); renderList(); renderMarkers();
   toast('保存しました 🍜');
@@ -824,8 +993,19 @@ async function saveRecord() {
 async function deleteRecord() {
   if (!editState) return;
   if (!confirm('この記録を削除しますか？')) return;
-  await dbDelete(editState.id);
-  records = await dbGetAll();
+  if (inBoardMode()) {
+    try {
+      const fs = await getFirestore();
+      await fs.deleteDoc(fs.doc(firestoreDb, 'boards', boardCode, 'records', editState.id));
+    } catch (e) {
+      console.error('shared delete failed', e);
+      toast('共有ボードからの削除に失敗しました');
+      return;
+    }
+  } else {
+    await dbDelete(editState.id);
+    records = await dbGetAll();
+  }
   closeSheet('editBackdrop');
   renderFilters(); renderList(); renderMarkers();
   toast('削除しました');
@@ -971,6 +1151,7 @@ function wireStaticHandlers() {
     document.getElementById('maptip').style.display = addMode ? 'block' : 'none';
     if (addMode) toast('地図をタップして場所を指定');
   };
+  document.getElementById('shareBtn').onclick = openShareSheet;
 }
 </script>
 </body>
