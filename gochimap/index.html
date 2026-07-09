@@ -370,7 +370,7 @@
           </label>
         </div>
       </div>
-      <div class="hint" id="boardPhotoHint" style="display:none; margin:-8px 0 16px;">📌 共有ボードでは写真はまだ共有されません（写真はプライベートマップでのみ保存できます）</div>
+      <div class="hint" id="boardPhotoHint" style="display:none; margin:-8px 0 16px;">📸 共有ボードの写真は、同じ合言葉の仲間にも見られます</div>
       <div class="save-bar">
         <button class="btn-save" id="saveRecordBtn">保存する</button>
         <button class="btn-danger-text" id="deleteRecordBtn" style="display:none">この記録を削除</button>
@@ -464,10 +464,10 @@ async function requestPersistentStorage() {
 }
 
 /* ============================================================
-   Shared board (Firestore) — optional realtime sharing with
-   friends via a shared passphrase ("board code"). No accounts;
-   anyone who knows the code can read/write that board.
-   Photos are not synced in this first version (text/data only).
+   Shared board (Firestore + Storage) — optional realtime sharing
+   with friends via a shared passphrase ("board code"). No accounts;
+   anyone who knows the code can read/write that board's records
+   and photos.
    ============================================================ */
 const BOARD_LS = 'gochimap.board';
 const FIREBASE_CONFIG = {
@@ -481,20 +481,57 @@ const FIREBASE_CONFIG = {
 const FIREBASE_SDK_VERSION = "12.15.0";
 let boardCode = localStorage.getItem(BOARD_LS) || null;
 let firestoreDb = null, firestoreMod = null, boardUnsub = null;
+let firebaseApp = null, storageMod = null, storageInst = null;
 
 function inBoardMode() { return !!boardCode; }
 
+function firebaseSdkUrl(name) { return 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/' + name; }
+
+async function getFirebaseApp() {
+  if (firebaseApp) return firebaseApp;
+  const { initializeApp } = await import(firebaseSdkUrl('firebase-app.js'));
+  firebaseApp = initializeApp(FIREBASE_CONFIG);
+  return firebaseApp;
+}
+
 async function getFirestore() {
   if (firestoreMod) return firestoreMod;
-  const base = 'https://www.gstatic.com/firebasejs/' + FIREBASE_SDK_VERSION + '/';
-  const [{ initializeApp }, fs] = await Promise.all([
-    import(base + 'firebase-app.js'),
-    import(base + 'firebase-firestore.js'),
+  const [app, fs] = await Promise.all([
+    getFirebaseApp(),
+    import(firebaseSdkUrl('firebase-firestore.js')),
   ]);
-  const app = initializeApp(FIREBASE_CONFIG);
   firestoreDb = fs.getFirestore(app);
   firestoreMod = fs;
   return fs;
+}
+
+async function getStorageLib() {
+  if (storageMod) return storageMod;
+  const [app, st] = await Promise.all([
+    getFirebaseApp(),
+    import(firebaseSdkUrl('firebase-storage.js')),
+  ]);
+  storageInst = st.getStorage(app);
+  storageMod = st;
+  return st;
+}
+
+async function uploadBoardPhoto(recordId, blob) {
+  const st = await getStorageLib();
+  const path = 'boards/' + boardCode + '/photos/' + recordId + '/' +
+    Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '.jpg';
+  const sref = st.ref(storageInst, path);
+  await st.uploadBytes(sref, blob, { contentType: 'image/jpeg' });
+  return st.getDownloadURL(sref);
+}
+
+async function deleteBoardRecordPhotos(recordId) {
+  try {
+    const st = await getStorageLib();
+    const dirRef = st.ref(storageInst, 'boards/' + boardCode + '/photos/' + recordId);
+    const listing = await st.listAll(dirRef);
+    await Promise.all(listing.items.map(item => st.deleteObject(item)));
+  } catch (e) { console.error('board photo cleanup failed', e); /* non-fatal */ }
 }
 
 function normalizeBoardCode(v) {
@@ -510,7 +547,7 @@ async function connectBoard(code) {
   if (boardUnsub) { boardUnsub(); boardUnsub = null; }
   const colRef = fs.collection(firestoreDb, 'boards', code, 'records');
   boardUnsub = fs.onSnapshot(colRef, (snap) => {
-    records = snap.docs.map(d => Object.assign({ photos: [] }, d.data(), { id: d.id }));
+    records = snap.docs.map(d => Object.assign({ photos: [], photoUrls: [] }, d.data(), { id: d.id }));
     renderFilters(); renderList(); renderMarkers();
   }, (err) => {
     console.error('board snapshot error', err);
@@ -562,7 +599,7 @@ function renderShareSheet() {
   const body = document.getElementById('shareBody');
   if (inBoardMode()) {
     body.innerHTML = `
-      <p class="sub" style="margin-bottom:16px">現在、下の合言葉でみんなと共有中です。同じ合言葉を仲間に伝えれば、同じマップに追加していけます。（写真はまだ共有されません）</p>
+      <p class="sub" style="margin-bottom:16px">現在、下の合言葉でみんなと共有中です。同じ合言葉を仲間に伝えれば、同じマップに追加していけます。（写真もこの合言葉を知っている人に共有されます）</p>
       <div class="field">
         <label>合言葉</label>
         <div style="display:flex; gap:8px; align-items:center;">
@@ -580,7 +617,7 @@ function renderShareSheet() {
     document.getElementById('leaveBoardBtn').onclick = leaveBoard;
   } else {
     body.innerHTML = `
-      <p class="sub" style="margin-bottom:16px">仲間と同じ「合言葉」を使うと、1つのマップをみんなで編集できます。まだ写真は共有されません（お店情報・評価・感想などが共有されます）。</p>
+      <p class="sub" style="margin-bottom:16px">仲間と同じ「合言葉」を使うと、1つのマップをみんなで編集できます。お店情報・評価・感想に加え、写真もこの合言葉を知っている人に共有されます。</p>
       <div class="field">
         <label>合言葉（3〜40文字、ひらがな・英数字OK）</label>
         <input type="text" id="boardCodeInput" placeholder="例: おかやまごはん / okayama-gohan" autocomplete="off" autocapitalize="off" spellcheck="false">
@@ -796,6 +833,11 @@ function starStr(n) {
   return s;
 }
 function blobURL(blob) { return URL.createObjectURL(blob); }
+function photoSrcs(r) {
+  if (r.photoUrls && r.photoUrls.length) return r.photoUrls; // shared-board photos (remote URLs)
+  if (r.photos && r.photos.length) return r.photos.map(blobURL); // private-map photos (local blobs)
+  return [];
+}
 
 function renderList() {
   const el = document.getElementById('list');
@@ -811,8 +853,9 @@ function renderList() {
   rs.forEach(r => {
     const card = document.createElement('div');
     card.className = 'card';
-    const thumb = (r.photos && r.photos.length)
-      ? `<img class="thumb" src="${blobURL(r.photos[0])}">`
+    const thumbSrcs = photoSrcs(r);
+    const thumb = thumbSrcs.length
+      ? `<img class="thumb" src="${thumbSrcs[0]}">`
       : `<div class="thumb">🍽️</div>`;
     const tags = (r.tags || []).map(t => `<span class="minitag">#${escapeHtml(t)}</span>`).join('');
     const trip = r.trip ? `<span class="minitag">🧳 ${escapeHtml(r.trip)}</span>` : '';
@@ -873,12 +916,15 @@ function openEdit(id, latlng) {
       id: 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
       name: '', address: '', lat: latlng ? latlng.lat : null, lng: latlng ? latlng.lng : null,
       placeId: '', googleRating: null, myRating: 0, memo: '', review: '',
-      tags: [], trip: '', visitedDate: todayStr(), photos: [], createdAt: Date.now(), updatedAt: Date.now(),
+      tags: [], trip: '', visitedDate: todayStr(), photos: [], photoUrls: [], createdAt: Date.now(), updatedAt: Date.now(),
     };
   } else {
-    editState = JSON.parse(JSON.stringify(records.find(r => r.id === id)));
+    const src = records.find(r => r.id === id);
+    editState = JSON.parse(JSON.stringify(src));
     // photos are blobs; deep clone above drops them — restore refs
-    editState.photos = (records.find(r => r.id === id).photos || []).slice();
+    editState.photos = (src.photos || []).slice();
+    // photoUrls are plain strings (uploaded shared-board photos) — safe from the clone
+    editState.photoUrls = (src.photoUrls || []).slice();
   }
   document.getElementById('editTitle').textContent = isNew ? 'お店を追加' : '記録を編集';
   document.getElementById('fName').value = editState.name || '';
@@ -891,7 +937,6 @@ function openEdit(id, latlng) {
   setRating(editState.myRating || 0);
   refreshTripList();
   renderPhotoGrid();
-  document.getElementById('photoField').style.display = inBoardMode() ? 'none' : 'block';
   document.getElementById('boardPhotoHint').style.display = inBoardMode() ? 'block' : 'none';
   document.getElementById('deleteRecordBtn').style.display = isNew ? 'none' : 'block';
   ensureAutocomplete();
@@ -908,13 +953,19 @@ function renderPhotoGrid() {
   // remove existing photo wraps (keep the add button label)
   grid.querySelectorAll('.photo-wrap').forEach(n => n.remove());
   const addBtn = grid.querySelector('.add-photo');
-  (editState.photos || []).forEach((blob, i) => {
+  // already-uploaded (shared board) photos, shown first, then newly-picked local ones pending upload
+  const items = [
+    ...(editState.photoUrls || []).map((url, i) => ({ kind: 'url', src: url, i })),
+    ...(editState.photos || []).map((blob, i) => ({ kind: 'blob', src: blobURL(blob), i })),
+  ];
+  items.forEach(item => {
     const wrap = document.createElement('div');
     wrap.className = 'photo-wrap';
-    wrap.innerHTML = `<img class="ph" src="${blobURL(blob)}"><button class="del" data-i="${i}">×</button>`;
+    wrap.innerHTML = `<img class="ph" src="${item.src}"><button class="del">×</button>`;
     wrap.querySelector('.del').onclick = (ev) => {
       ev.stopPropagation();
-      editState.photos.splice(i, 1);
+      if (item.kind === 'url') editState.photoUrls.splice(item.i, 1);
+      else editState.photos.splice(item.i, 1);
       renderPhotoGrid();
     };
     grid.insertBefore(wrap, addBtn);
@@ -975,9 +1026,15 @@ async function saveRecord() {
   }
   if (inBoardMode()) {
     try {
+      if ((editState.photos || []).length) toast('写真をアップロード中…');
+      const uploadedUrls = [];
+      for (const blob of (editState.photos || [])) {
+        uploadedUrls.push(await uploadBoardPhoto(editState.id, blob));
+      }
       const fs = await getFirestore();
       const data = Object.assign({}, editState);
-      delete data.photos; // not synced in shared boards yet
+      data.photoUrls = [...(editState.photoUrls || []), ...uploadedUrls];
+      delete data.photos; // Firestore stores URLs only, never raw blobs
       await fs.setDoc(fs.doc(firestoreDb, 'boards', boardCode, 'records', editState.id), data);
     } catch (e) {
       console.error('shared save failed', e);
@@ -1000,6 +1057,7 @@ async function deleteRecord() {
     try {
       const fs = await getFirestore();
       await fs.deleteDoc(fs.doc(firestoreDb, 'boards', boardCode, 'records', editState.id));
+      deleteBoardRecordPhotos(editState.id); // best-effort, don't block on it
     } catch (e) {
       console.error('shared delete failed', e);
       toast('共有ボードからの削除に失敗しました');
@@ -1021,8 +1079,9 @@ function openDetail(id) {
   const r = records.find(x => x.id === id);
   if (!r) return;
   const body = document.getElementById('detailBody');
-  const photos = (r.photos && r.photos.length)
-    ? `<div class="detail-photos">${r.photos.map(b => `<img src="${blobURL(b)}">`).join('')}</div>` : '';
+  const detailSrcs = photoSrcs(r);
+  const photos = detailSrcs.length
+    ? `<div class="detail-photos">${detailSrcs.map(s => `<img src="${s}">`).join('')}</div>` : '';
   const gcmp = r.googleRating
     ? `<div class="col"><div class="lbl">Googleの評価</div><div class="val">★ ${r.googleRating.toFixed(1)}</div></div>` : '';
   const tags = (r.tags || []).map(t => `<span class="minitag">#${escapeHtml(t)}</span>`).join(' ');
