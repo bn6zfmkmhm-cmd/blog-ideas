@@ -240,7 +240,8 @@
   .detail-meta { font-size: 13px; color: var(--text); opacity: .9; }
 
   /* store detail (grouped posts) */
-  .count-badge { font-size: 11px; font-weight: 700; color: var(--accent2); background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; margin-left: 6px; vertical-align: middle; white-space: nowrap; }
+  .count-badge { font-size: 11px; font-weight: 800; color: #1b1410; background: var(--accent); border-radius: 10px; padding: 2px 9px; margin-left: 6px; vertical-align: middle; white-space: nowrap; }
+  .card .meta .avg-num { font-size: 12px; color: var(--accent2); font-weight: 700; }
   .posts { display: flex; flex-direction: column; gap: 14px; margin-top: 4px; }
   .post { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: var(--surface); }
   .post-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
@@ -815,7 +816,8 @@ function groupedRecords() {
   const groups = [];
   for (const [key, recs] of byKey) {
     const latest = recs[0];
-    groups.push({ key, recs, latest, name: latest.name, address: latest.address, lat: latest.lat, lng: latest.lng, placeId: latest.placeId, googleRating: latest.googleRating });
+    const avgRating = recs.reduce((sum, r) => sum + (r.myRating || 0), 0) / recs.length;
+    groups.push({ key, recs, latest, avgRating, name: latest.name, address: latest.address, lat: latest.lat, lng: latest.lng, placeId: latest.placeId, googleRating: latest.googleRating });
   }
   groups.sort((a, b) => (b.latest.visitedDate || '').localeCompare(a.latest.visitedDate || '') || b.latest.createdAt - a.latest.createdAt);
   return groups;
@@ -928,11 +930,14 @@ function renderList() {
     const tags = [...tagSet].map(t => `<span class="minitag">#${escapeHtml(t)}</span>`).join('');
     const trip = latest.trip ? `<span class="minitag">🧳 ${escapeHtml(latest.trip)}</span>` : '';
     const countBadge = g.recs.length > 1 ? `<span class="count-badge">${g.recs.length}件</span>` : '';
+    const ratingHtml = g.recs.length > 1
+      ? `<span class="stars">${starStr(Math.round(g.avgRating))}</span><span class="avg-num">${g.avgRating.toFixed(1)}平均</span>`
+      : `<span class="stars">${starStr(latest.myRating)}</span>`;
     card.innerHTML = `
       ${thumb}
       <div class="body">
         <div class="name">${escapeHtml(latest.name)}${countBadge}</div>
-        <div class="meta"><span class="stars">${starStr(latest.myRating)}</span><span>${latest.visitedDate || ''}</span>${latest.author ? `<span>🙋 ${escapeHtml(latest.author)}</span>` : ''}</div>
+        <div class="meta">${ratingHtml}<span>${latest.visitedDate || ''}</span>${latest.author ? `<span>🙋 ${escapeHtml(latest.author)}</span>` : ''}</div>
         <div class="memo">${escapeHtml(latest.memo || latest.review || '')}</div>
         <div class="tagline">${trip}${tags}</div>
       </div>`;
