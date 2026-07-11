@@ -479,6 +479,8 @@ const FIREBASE_CONFIG = {
   appId: "1:950189970831:web:838eb809a08d03134a7fa",
 };
 const FIREBASE_SDK_VERSION = "12.15.0";
+const NICK_LS = 'gochimap.nickname';
+let myNickname = localStorage.getItem(NICK_LS) || '';
 let boardCode = localStorage.getItem(BOARD_LS) || null;
 let firestoreDb = null, firestoreMod = null, boardUnsub = null;
 let firebaseApp = null, storageMod = null, storageInst = null;
@@ -582,6 +584,18 @@ async function leaveBoard() {
   toast('自分だけのマップに戻りました');
 }
 
+function setNickname(v) {
+  myNickname = (v || '').trim().slice(0, 20);
+  localStorage.setItem(NICK_LS, myNickname);
+}
+// Ensure a nickname exists before saving a shared record; prompts once if unset.
+function ensureNickname() {
+  if (myNickname) return myNickname;
+  const n = (window.prompt('共有マップで表示される、あなたの名前を入力してください（例: こうき）') || '').trim();
+  if (n) setNickname(n);
+  return myNickname;
+}
+
 function updateBoardChip() {
   const chip = document.getElementById('boardChip');
   const btn = document.getElementById('shareBtn');
@@ -601,6 +615,10 @@ function renderShareSheet() {
     body.innerHTML = `
       <p class="sub" style="margin-bottom:16px">現在、下の合言葉でみんなと共有中です。同じ合言葉を仲間に伝えれば、同じマップに追加していけます。（写真もこの合言葉を知っている人に共有されます）</p>
       <div class="field">
+        <label>あなたの表示名（記録に「記録した人」として表示されます）</label>
+        <input type="text" id="nickInput" placeholder="例: こうき" value="${escapeHtml(myNickname)}" maxlength="20" autocomplete="off">
+      </div>
+      <div class="field">
         <label>合言葉</label>
         <div style="display:flex; gap:8px; align-items:center;">
           <input type="text" id="boardCodeDisplay" readonly value="${escapeHtml(boardCode)}" style="font-size:17px; font-weight:700;">
@@ -608,11 +626,16 @@ function renderShareSheet() {
         </div>
       </div>
       <div class="save-bar">
+        <button class="btn-save" id="saveNickBtn">表示名を保存</button>
         <button class="btn-danger-text" id="leaveBoardBtn">共有をやめて自分だけのマップに戻る</button>
       </div>`;
     document.getElementById('copyBoardBtn').onclick = async () => {
       try { await navigator.clipboard.writeText(boardCode); toast('コピーしました'); }
       catch (e) { toast('コピーできませんでした'); }
+    };
+    document.getElementById('saveNickBtn').onclick = () => {
+      setNickname(document.getElementById('nickInput').value);
+      toast('表示名を保存しました');
     };
     document.getElementById('leaveBoardBtn').onclick = leaveBoard;
   } else {
@@ -863,7 +886,7 @@ function renderList() {
       ${thumb}
       <div class="body">
         <div class="name">${escapeHtml(r.name)}</div>
-        <div class="meta"><span class="stars">${starStr(r.myRating)}</span><span>${r.visitedDate || ''}</span></div>
+        <div class="meta"><span class="stars">${starStr(r.myRating)}</span><span>${r.visitedDate || ''}</span>${r.author ? `<span>🙋 ${escapeHtml(r.author)}</span>` : ''}</div>
         <div class="memo">${escapeHtml(r.memo || r.review || '')}</div>
         <div class="tagline">${trip}${tags}</div>
       </div>`;
@@ -1025,6 +1048,8 @@ async function saveRecord() {
     toast('場所未指定のため地図中心に配置しました');
   }
   if (inBoardMode()) {
+    // stamp the author once (who first created this record); keep it on later edits
+    if (!editState.author) editState.author = ensureNickname() || '名無し';
     try {
       if ((editState.photos || []).length) toast('写真をアップロード中…');
       const uploadedUrls = [];
@@ -1089,12 +1114,13 @@ function openDetail(id) {
   const mapsUrl = r.placeId
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(r.name)}&query_place_id=${r.placeId}`
     : `https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lng}`;
+  const authorLine = r.author ? ` ・ 🙋 ${escapeHtml(r.author)}` : '';
   body.innerHTML = `
     ${photos}
     <div class="detail-title">${escapeHtml(r.name)}</div>
-    <div class="detail-addr">${escapeHtml(r.address || '')}${r.visitedDate ? ' ・ 訪問: ' + r.visitedDate : ''}</div>
+    <div class="detail-addr">${escapeHtml(r.address || '')}${r.visitedDate ? ' ・ 訪問: ' + r.visitedDate : ''}${authorLine}</div>
     <div class="rating-cmp">
-      <div class="col"><div class="lbl">自分の評価</div><div class="big-stars">${starStr(r.myRating).replace(/<span class="off">★<\/span>/g, '☆')}</div></div>
+      <div class="col"><div class="lbl">${r.author ? 'この人の評価' : '自分の評価'}</div><div class="big-stars">${starStr(r.myRating).replace(/<span class="off">★<\/span>/g, '☆')}</div></div>
       ${gcmp}
     </div>
     ${(trip || tags) ? `<div class="detail-section"><div class="tagline">${trip} ${tags}</div></div>` : ''}
@@ -1102,10 +1128,28 @@ function openDetail(id) {
     ${r.review ? `<div class="detail-section"><h3>感想</h3><div class="detail-review">${escapeHtml(r.review)}</div></div>` : ''}
     <a class="gmaps-link" href="${mapsUrl}" target="_blank" rel="noopener">📍 Googleマップで開く</a>
     <div class="save-bar" style="margin-top:22px">
-      <button class="btn-save" id="editFromDetail">編集する</button>
+      <button class="btn-save" id="newVisitFromDetail">この店でもう一度記録する</button>
+      <button class="btn-danger-text" id="editFromDetail" style="color:var(--accent2)">この記録を編集する</button>
     </div>`;
   document.getElementById('editFromDetail').onclick = () => { closeSheet('detailBackdrop'); openEdit(id); };
+  document.getElementById('newVisitFromDetail').onclick = () => { closeSheet('detailBackdrop'); openNewVisit(id); };
   openSheet('detailBackdrop');
+}
+
+// Create a fresh, separate record for the same place (keeps the old record).
+function openNewVisit(id) {
+  const base = records.find(r => r.id === id);
+  if (!base) return;
+  openEdit(null, { lat: base.lat, lng: base.lng });
+  // pre-fill place identity from the existing record, leave the rest blank for a new visit
+  editState.name = base.name;
+  editState.address = base.address || '';
+  editState.placeId = base.placeId || '';
+  editState.googleRating = base.googleRating || null;
+  document.getElementById('fName').value = base.name || '';
+  document.getElementById('fAddr').value = base.address || '';
+  document.getElementById('editTitle').textContent = 'もう一度記録する';
+  if (map && base.lat != null) { map.setCenter({ lat: base.lat, lng: base.lng }); }
 }
 
 /* ============================================================
