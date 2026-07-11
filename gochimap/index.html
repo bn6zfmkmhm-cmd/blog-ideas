@@ -245,7 +245,7 @@
   .detail-meta { font-size: 13px; color: var(--text); opacity: .9; }
 
   /* store detail (grouped posts) */
-  .count-badge { font-size: 11px; font-weight: 800; color: #1b1410; background: var(--accent); border-radius: 10px; padding: 2px 9px; margin-left: 6px; vertical-align: middle; white-space: nowrap; }
+  .count-badge { font-size: 11px; font-weight: 800; color: #1b1410; background: var(--accent); border-radius: 10px; padding: 2px 9px; vertical-align: middle; white-space: nowrap; }
   .card .meta .avg-num { font-size: 12px; color: var(--accent2); font-weight: 700; }
   .posts { display: flex; flex-direction: column; gap: 14px; margin-top: 4px; }
   .post { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: var(--surface); }
@@ -391,7 +391,7 @@
       <div class="hint" id="boardPhotoHint" style="display:none; margin:-8px 0 16px;">📸 共有ボードの写真は、同じ合言葉の仲間にも見られます</div>
       <div class="save-bar">
         <button class="btn-save" id="saveRecordBtn">保存する</button>
-        <button class="btn-danger-text" id="deleteRecordBtn" style="display:none">この記録を削除</button>
+        <button class="btn-danger-text" id="deleteRecordBtn" style="display:none">この投稿を削除</button>
       </div>
     </div>
   </div>
@@ -401,7 +401,7 @@
 <div class="sheet-backdrop" id="detailBackdrop">
   <div class="sheet">
     <div class="sheet-head">
-      <h2>記録</h2>
+      <h2>投稿</h2>
       <button class="close" data-close="detailBackdrop">×</button>
     </div>
     <div class="sheet-body" id="detailBody"></div>
@@ -638,7 +638,7 @@ function renderShareSheet() {
     body.innerHTML = `
       <p class="sub" style="margin-bottom:16px">現在、下の合言葉でみんなと共有中です。同じ合言葉を仲間に伝えれば、同じマップに追加していけます。（写真もこの合言葉を知っている人に共有されます）</p>
       <div class="field">
-        <label>あなたの表示名（記録に「記録した人」として表示されます）</label>
+        <label>あなたの表示名（投稿に「投稿した人」として表示されます）</label>
         <input type="text" id="nickInput" placeholder="例: こうき" value="${escapeHtml(myNickname)}" maxlength="20" autocomplete="off">
       </div>
       <div class="field">
@@ -839,7 +839,7 @@ function renderMarkers() {
       background: pinColor(g.latest.myRating),
       borderColor: '#1b1410',
       glyphColor: '#1b1410',
-      glyph: g.latest.myRating ? String(g.latest.myRating) : '',
+      glyph: '',
     });
     const marker = new markerLib.AdvancedMarkerElement({
       map, position: { lat: g.lat, lng: g.lng }, content: pin.element, title: g.name,
@@ -929,8 +929,8 @@ function renderList() {
   if (!groups.length) {
     const isFiltering = searchQuery || activeFilter.type !== 'all';
     el.innerHTML = isFiltering
-      ? '<div class="empty">該当する記録がありませんでした。<br>検索語やタグを変えてみてください。</div>'
-      : '<div class="empty">まだ記録がありません。<br>右下の ＋ から、行ったお店を追加してみましょう。</div>';
+      ? '<div class="empty">該当する投稿がありませんでした。<br>検索語やタグを変えてみてください。</div>'
+      : '<div class="empty">まだ投稿がありません。<br>右下の ＋ から、行ったお店を追加してみましょう。</div>';
     return;
   }
   el.innerHTML = '';
@@ -948,12 +948,12 @@ function renderList() {
     const trip = latest.trip ? `<span class="minitag">🧳 ${escapeHtml(latest.trip)}</span>` : '';
     const countBadge = g.recs.length > 1 ? `<span class="count-badge">${g.recs.length}件</span>` : '';
     const ratingHtml = g.recs.length > 1
-      ? `<span class="stars">${starStrPrecise(g.avgRating)}</span><span class="avg-num">${g.avgRating.toFixed(1)}</span>`
+      ? `<span class="stars">${starStrPrecise(g.avgRating)}</span><span class="avg-num">${g.avgRating.toFixed(1)}</span>${countBadge}`
       : `<span class="stars">${starStr(latest.myRating)}</span>`;
     card.innerHTML = `
       ${thumb}
       <div class="body">
-        <div class="name">${escapeHtml(latest.name)}${countBadge}</div>
+        <div class="name">${escapeHtml(latest.name)}</div>
         <div class="meta">${ratingHtml}<span>${latest.visitedDate || ''}</span>${latest.author ? `<span>🙋 ${escapeHtml(latest.author)}</span>` : ''}</div>
         <div class="memo">${escapeHtml(latest.memo || latest.review || '')}</div>
         <div class="tagline">${trip}${tags}</div>
@@ -1017,7 +1017,7 @@ function openEdit(id, latlng) {
     // photoUrls are plain strings (uploaded shared-board photos) — safe from the clone
     editState.photoUrls = (src.photoUrls || []).slice();
   }
-  document.getElementById('editTitle').textContent = isNew ? 'お店を追加' : '記録を編集';
+  document.getElementById('editTitle').textContent = isNew ? 'お店を追加' : '投稿を編集';
   document.getElementById('fName').value = editState.name || '';
   document.getElementById('fAddr').value = editState.address || '';
   document.getElementById('fDate').value = editState.visitedDate || todayStr();
@@ -1166,7 +1166,7 @@ async function deleteRecordById(id) {
 
 async function deleteRecord() {
   if (!editState) return;
-  if (!confirm('この記録を削除しますか？')) return;
+  if (!confirm('この投稿を削除しますか？')) return;
   const ok = await deleteRecordById(editState.id);
   if (!ok) return;
   closeSheet('editBackdrop');
@@ -1208,13 +1208,13 @@ function openStore(key) {
   const mapsUrl = g.placeId
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(g.name)}&query_place_id=${g.placeId}`
     : `https://www.google.com/maps/search/?api=1&query=${g.lat},${g.lng}`;
-  const countLine = g.recs.length > 1 ? ` ・ ${g.recs.length}件の記録` : '';
+  const countLine = g.recs.length > 1 ? ` ・ ${g.recs.length}件の投稿` : '';
   body.innerHTML = `
     <div class="detail-title">${escapeHtml(g.name)}</div>
     <div class="detail-addr">${escapeHtml(g.address || '')}${countLine}</div>
     ${g.googleRating ? `<div class="detail-meta" style="margin-bottom:10px">Googleの評価: ★ ${g.googleRating.toFixed(1)}</div>` : ''}
     <a class="gmaps-link" href="${mapsUrl}" target="_blank" rel="noopener">📍 Googleマップで開く</a>
-    <div class="save-bar" style="margin:16px 0 8px"><button class="btn-save" id="newVisitStore">新しく記録する</button></div>
+    <div class="save-bar" style="margin:16px 0 8px"><button class="btn-save" id="newVisitStore">新しく投稿する</button></div>
     <div class="posts">${g.recs.map(storePostHtml).join('')}</div>`;
   document.getElementById('newVisitStore').onclick = () => { closeSheet('detailBackdrop'); openNewVisit(g.recs[0].id); };
   g.recs.forEach(r => {
@@ -1227,7 +1227,7 @@ function openStore(key) {
 }
 
 async function deletePostFromStore(id, key) {
-  if (!confirm('この記録を削除しますか？')) return;
+  if (!confirm('この投稿を削除しますか？')) return;
   const ok = await deleteRecordById(id);
   if (!ok) return;
   toast('削除しました');
@@ -1247,7 +1247,7 @@ function openNewVisit(id) {
   editState.googleRating = base.googleRating || null;
   document.getElementById('fName').value = base.name || '';
   document.getElementById('fAddr').value = base.address || '';
-  document.getElementById('editTitle').textContent = '新しく記録する';
+  document.getElementById('editTitle').textContent = '新しく投稿する';
   if (map && base.lat != null) { map.setCenter({ lat: base.lat, lng: base.lng }); }
 }
 
