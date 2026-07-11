@@ -1128,8 +1128,8 @@ function openDetail(id) {
     ${r.review ? `<div class="detail-section"><h3>感想</h3><div class="detail-review">${escapeHtml(r.review)}</div></div>` : ''}
     <a class="gmaps-link" href="${mapsUrl}" target="_blank" rel="noopener">📍 Googleマップで開く</a>
     <div class="save-bar" style="margin-top:22px">
-      <button class="btn-save" id="newVisitFromDetail">この店でもう一度記録する</button>
-      <button class="btn-danger-text" id="editFromDetail" style="color:var(--accent2)">この記録を編集する</button>
+      <button class="btn-save" id="newVisitFromDetail">新しく記録する</button>
+      <button class="btn-danger-text" id="editFromDetail" style="color:var(--accent2)">過去の記録の編集をする</button>
     </div>`;
   document.getElementById('editFromDetail').onclick = () => { closeSheet('detailBackdrop'); openEdit(id); };
   document.getElementById('newVisitFromDetail').onclick = () => { closeSheet('detailBackdrop'); openNewVisit(id); };
