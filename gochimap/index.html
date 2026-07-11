@@ -946,7 +946,7 @@ function renderList() {
     const tagSet = new Set(); g.recs.forEach(r => (r.tags || []).forEach(t => tagSet.add(t)));
     const tags = [...tagSet].map(t => `<span class="minitag">#${escapeHtml(t)}</span>`).join('');
     const trip = latest.trip ? `<span class="minitag">🧳 ${escapeHtml(latest.trip)}</span>` : '';
-    const countBadge = g.recs.length > 1 ? `<span class="count-badge">${g.recs.length}件</span>` : '';
+    const countBadge = g.recs.length > 1 ? `<span class="count-badge">📝 ${g.recs.length}件</span>` : '';
     const ratingHtml = g.recs.length > 1
       ? `<span class="stars">${starStrPrecise(g.avgRating)}</span><span class="avg-num">${g.avgRating.toFixed(1)}</span>${countBadge}`
       : `<span class="stars">${starStr(latest.myRating)}</span>`;
