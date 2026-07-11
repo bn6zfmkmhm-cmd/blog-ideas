@@ -238,6 +238,18 @@
   .detail-section h3 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 7px; }
   .detail-review { font-size: 15px; line-height: 1.8; white-space: pre-wrap; }
   .detail-meta { font-size: 13px; color: var(--text); opacity: .9; }
+
+  /* store detail (grouped posts) */
+  .count-badge { font-size: 11px; font-weight: 700; color: var(--accent2); background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; margin-left: 6px; vertical-align: middle; white-space: nowrap; }
+  .posts { display: flex; flex-direction: column; gap: 14px; margin-top: 4px; }
+  .post { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: var(--surface); }
+  .post-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .post-head .stars { font-size: 16px; color: var(--gold); letter-spacing: 1px; }
+  .post-head .stars .off { color: var(--border); }
+  .post-date { font-size: 12px; color: var(--muted); text-align: right; }
+  .post-actions { display: flex; gap: 10px; margin-top: 12px; }
+  .post-actions button { flex: 1; padding: 9px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 13px; }
+  .post-actions button.danger { color: var(--danger); }
   .gmaps-link { display: inline-block; margin-top: 6px; color: var(--accent2); font-size: 14px; text-decoration: none; }
 
   .toast {
@@ -449,6 +461,7 @@ let map, markerLib, markers = [];
 let editState = null; // current record being edited/created
 let pendingLatLng = null; // from map click
 let addMode = false;
+let currentStoreKey = null; // store group currently shown in the detail sheet
 
 /* ============================================================
    Persistent storage: ask the browser not to auto-evict our
@@ -551,6 +564,10 @@ async function connectBoard(code) {
   boardUnsub = fs.onSnapshot(colRef, (snap) => {
     records = snap.docs.map(d => Object.assign({ photos: [], photoUrls: [] }, d.data(), { id: d.id }));
     renderFilters(); renderList(); renderMarkers();
+    // keep an open store sheet in sync with realtime updates
+    if (currentStoreKey && document.getElementById('detailBackdrop').classList.contains('open')) {
+      openStore(currentStoreKey);
+    }
   }, (err) => {
     console.error('board snapshot error', err);
     toast('共有ボードとの通信でエラーが発生しました');
@@ -779,29 +796,54 @@ function pinColor(rating) {
   return '#a08d7d';
 }
 
+// Group key for "the same store": prefer the Google place id, else name + rounded coords.
+function storeKey(r) {
+  if (r.placeId) return 'p:' + r.placeId;
+  const la = (typeof r.lat === 'number') ? r.lat.toFixed(4) : 'x';
+  const ln = (typeof r.lng === 'number') ? r.lng.toFixed(4) : 'y';
+  return 'n:' + (r.name || '') + '@' + la + ',' + ln;
+}
+// Groups of records by store, each group's records newest-first, groups newest-first.
+function groupedRecords() {
+  const rs = filteredRecords(); // already sorted newest-first
+  const byKey = new Map();
+  rs.forEach(r => {
+    const k = storeKey(r);
+    if (!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k).push(r);
+  });
+  const groups = [];
+  for (const [key, recs] of byKey) {
+    const latest = recs[0];
+    groups.push({ key, recs, latest, name: latest.name, address: latest.address, lat: latest.lat, lng: latest.lng, placeId: latest.placeId, googleRating: latest.googleRating });
+  }
+  groups.sort((a, b) => (b.latest.visitedDate || '').localeCompare(a.latest.visitedDate || '') || b.latest.createdAt - a.latest.createdAt);
+  return groups;
+}
+
 function renderMarkers() {
   markers.forEach(m => m.map = null);
   markers = [];
   if (!map || !markerLib) return;
-  const shown = filteredRecords();
+  const groups = groupedRecords();
   const bounds = new google.maps.LatLngBounds();
-  shown.forEach(r => {
+  groups.forEach(g => {
     const pin = new markerLib.PinElement({
-      background: pinColor(r.myRating),
+      background: pinColor(g.latest.myRating),
       borderColor: '#1b1410',
       glyphColor: '#1b1410',
-      glyph: r.myRating ? String(r.myRating) : '',
+      glyph: g.latest.myRating ? String(g.latest.myRating) : '',
     });
     const marker = new markerLib.AdvancedMarkerElement({
-      map, position: { lat: r.lat, lng: r.lng }, content: pin.element, title: r.name,
+      map, position: { lat: g.lat, lng: g.lng }, content: pin.element, title: g.name,
     });
-    marker.addListener('gmp-click', () => openDetail(r.id));
-    marker.addListener('click', () => openDetail(r.id));
+    marker.addListener('gmp-click', () => openStore(g.key));
+    marker.addListener('click', () => openStore(g.key));
     markers.push(marker);
-    bounds.extend({ lat: r.lat, lng: r.lng });
+    bounds.extend({ lat: g.lat, lng: g.lng });
   });
-  if (shown.length === 1) { map.setCenter({ lat: shown[0].lat, lng: shown[0].lng }); map.setZoom(15); }
-  else if (shown.length > 1) { map.fitBounds(bounds, 60); }
+  if (groups.length === 1) { map.setCenter({ lat: groups[0].lat, lng: groups[0].lng }); map.setZoom(15); }
+  else if (groups.length > 1) { map.fitBounds(bounds, 60); }
 }
 
 /* ============================================================
@@ -864,8 +906,8 @@ function photoSrcs(r) {
 
 function renderList() {
   const el = document.getElementById('list');
-  const rs = filteredRecords();
-  if (!rs.length) {
+  const groups = groupedRecords();
+  if (!groups.length) {
     const isFiltering = searchQuery || activeFilter.type !== 'all';
     el.innerHTML = isFiltering
       ? '<div class="empty">該当する記録がありませんでした。<br>検索語やタグを変えてみてください。</div>'
@@ -873,24 +915,28 @@ function renderList() {
     return;
   }
   el.innerHTML = '';
-  rs.forEach(r => {
+  groups.forEach(g => {
+    const latest = g.latest;
     const card = document.createElement('div');
     card.className = 'card';
-    const thumbSrcs = photoSrcs(r);
-    const thumb = thumbSrcs.length
-      ? `<img class="thumb" src="${thumbSrcs[0]}">`
-      : `<div class="thumb">🍽️</div>`;
-    const tags = (r.tags || []).map(t => `<span class="minitag">#${escapeHtml(t)}</span>`).join('');
-    const trip = r.trip ? `<span class="minitag">🧳 ${escapeHtml(r.trip)}</span>` : '';
+    // thumbnail: newest record that has a photo
+    let thumbSrc = '';
+    for (const r of g.recs) { const s = photoSrcs(r); if (s.length) { thumbSrc = s[0]; break; } }
+    const thumb = thumbSrc ? `<img class="thumb" src="${thumbSrc}">` : `<div class="thumb">🍽️</div>`;
+    // tags: union across all posts for this store
+    const tagSet = new Set(); g.recs.forEach(r => (r.tags || []).forEach(t => tagSet.add(t)));
+    const tags = [...tagSet].map(t => `<span class="minitag">#${escapeHtml(t)}</span>`).join('');
+    const trip = latest.trip ? `<span class="minitag">🧳 ${escapeHtml(latest.trip)}</span>` : '';
+    const countBadge = g.recs.length > 1 ? `<span class="count-badge">${g.recs.length}件</span>` : '';
     card.innerHTML = `
       ${thumb}
       <div class="body">
-        <div class="name">${escapeHtml(r.name)}</div>
-        <div class="meta"><span class="stars">${starStr(r.myRating)}</span><span>${r.visitedDate || ''}</span>${r.author ? `<span>🙋 ${escapeHtml(r.author)}</span>` : ''}</div>
-        <div class="memo">${escapeHtml(r.memo || r.review || '')}</div>
+        <div class="name">${escapeHtml(latest.name)}${countBadge}</div>
+        <div class="meta"><span class="stars">${starStr(latest.myRating)}</span><span>${latest.visitedDate || ''}</span>${latest.author ? `<span>🙋 ${escapeHtml(latest.author)}</span>` : ''}</div>
+        <div class="memo">${escapeHtml(latest.memo || latest.review || '')}</div>
         <div class="tagline">${trip}${tags}</div>
       </div>`;
-    card.onclick = () => openDetail(r.id);
+    card.onclick = () => openStore(g.key);
     el.appendChild(card);
   });
 }
@@ -1075,65 +1121,96 @@ async function saveRecord() {
   toast('保存しました 🍜');
 }
 
-async function deleteRecord() {
-  if (!editState) return;
-  if (!confirm('この記録を削除しますか？')) return;
+// Delete a single record by id (handles shared board vs private). Returns true on success.
+async function deleteRecordById(id) {
   if (inBoardMode()) {
     try {
       const fs = await getFirestore();
-      await fs.deleteDoc(fs.doc(firestoreDb, 'boards', boardCode, 'records', editState.id));
-      deleteBoardRecordPhotos(editState.id); // best-effort, don't block on it
+      await fs.deleteDoc(fs.doc(firestoreDb, 'boards', boardCode, 'records', id));
+      deleteBoardRecordPhotos(id); // best-effort, don't block on it
+      // onSnapshot will refresh records/list/markers; nothing else to do
     } catch (e) {
       console.error('shared delete failed', e);
       toast('共有ボードからの削除に失敗しました');
-      return;
+      return false;
     }
   } else {
-    await dbDelete(editState.id);
+    await dbDelete(id);
     records = await dbGetAll();
+    renderFilters(); renderList(); renderMarkers();
   }
+  return true;
+}
+
+async function deleteRecord() {
+  if (!editState) return;
+  if (!confirm('この記録を削除しますか？')) return;
+  const ok = await deleteRecordById(editState.id);
+  if (!ok) return;
   closeSheet('editBackdrop');
-  renderFilters(); renderList(); renderMarkers();
   toast('削除しました');
 }
 
 /* ============================================================
    Detail sheet
    ============================================================ */
-function openDetail(id) {
-  const r = records.find(x => x.id === id);
-  if (!r) return;
-  const body = document.getElementById('detailBody');
-  const detailSrcs = photoSrcs(r);
-  const photos = detailSrcs.length
-    ? `<div class="detail-photos">${detailSrcs.map(s => `<img src="${s}">`).join('')}</div>` : '';
-  const gcmp = r.googleRating
-    ? `<div class="col"><div class="lbl">Googleの評価</div><div class="val">★ ${r.googleRating.toFixed(1)}</div></div>` : '';
+// One post (single visit record) inside the store view.
+function storePostHtml(r) {
+  const srcs = photoSrcs(r);
+  const photos = srcs.length ? `<div class="detail-photos">${srcs.map(s => `<img src="${s}">`).join('')}</div>` : '';
   const tags = (r.tags || []).map(t => `<span class="minitag">#${escapeHtml(t)}</span>`).join(' ');
   const trip = r.trip ? `<span class="minitag">🧳 ${escapeHtml(r.trip)}</span>` : '';
-  const mapsUrl = r.placeId
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(r.name)}&query_place_id=${r.placeId}`
-    : `https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lng}`;
-  const authorLine = r.author ? ` ・ 🙋 ${escapeHtml(r.author)}` : '';
-  body.innerHTML = `
-    ${photos}
-    <div class="detail-title">${escapeHtml(r.name)}</div>
-    <div class="detail-addr">${escapeHtml(r.address || '')}${r.visitedDate ? ' ・ 訪問: ' + r.visitedDate : ''}${authorLine}</div>
-    <div class="rating-cmp">
-      <div class="col"><div class="lbl">${r.author ? 'この人の評価' : '自分の評価'}</div><div class="big-stars">${starStr(r.myRating).replace(/<span class="off">★<\/span>/g, '☆')}</div></div>
-      ${gcmp}
+  const author = r.author ? ` ・ 🙋 ${escapeHtml(r.author)}` : '';
+  return `<div class="post">
+    <div class="post-head">
+      <span class="stars">${starStr(r.myRating)}</span>
+      <span class="post-date">${r.visitedDate || ''}${author}</span>
     </div>
-    ${(trip || tags) ? `<div class="detail-section"><div class="tagline">${trip} ${tags}</div></div>` : ''}
-    ${r.memo ? `<div class="detail-section"><h3>ひとことメモ</h3><div class="detail-meta">${escapeHtml(r.memo)}</div></div>` : ''}
-    ${r.review ? `<div class="detail-section"><h3>感想</h3><div class="detail-review">${escapeHtml(r.review)}</div></div>` : ''}
+    ${photos}
+    ${(trip || tags) ? `<div class="tagline" style="margin:8px 0 2px">${trip} ${tags}</div>` : ''}
+    ${r.memo ? `<div class="detail-meta" style="margin-top:8px">${escapeHtml(r.memo)}</div>` : ''}
+    ${r.review ? `<div class="detail-review" style="margin-top:8px">${escapeHtml(r.review)}</div>` : ''}
+    <div class="post-actions">
+      <button data-edit="${r.id}">編集</button>
+      <button data-del="${r.id}" class="danger">削除</button>
+    </div>
+  </div>`;
+}
+
+// Show all posts for one store, newest first, scrollable.
+function openStore(key) {
+  const g = groupedRecords().find(x => x.key === key);
+  if (!g) { closeSheet('detailBackdrop'); currentStoreKey = null; return; }
+  currentStoreKey = key;
+  const body = document.getElementById('detailBody');
+  const mapsUrl = g.placeId
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(g.name)}&query_place_id=${g.placeId}`
+    : `https://www.google.com/maps/search/?api=1&query=${g.lat},${g.lng}`;
+  const countLine = g.recs.length > 1 ? ` ・ ${g.recs.length}件の記録` : '';
+  body.innerHTML = `
+    <div class="detail-title">${escapeHtml(g.name)}</div>
+    <div class="detail-addr">${escapeHtml(g.address || '')}${countLine}</div>
+    ${g.googleRating ? `<div class="detail-meta" style="margin-bottom:10px">Googleの評価: ★ ${g.googleRating.toFixed(1)}</div>` : ''}
     <a class="gmaps-link" href="${mapsUrl}" target="_blank" rel="noopener">📍 Googleマップで開く</a>
-    <div class="save-bar" style="margin-top:22px">
-      <button class="btn-save" id="newVisitFromDetail">新しく記録する</button>
-      <button class="btn-danger-text" id="editFromDetail" style="color:var(--accent2)">過去の記録の編集をする</button>
-    </div>`;
-  document.getElementById('editFromDetail').onclick = () => { closeSheet('detailBackdrop'); openEdit(id); };
-  document.getElementById('newVisitFromDetail').onclick = () => { closeSheet('detailBackdrop'); openNewVisit(id); };
+    <div class="save-bar" style="margin:16px 0 8px"><button class="btn-save" id="newVisitStore">新しく記録する</button></div>
+    <div class="posts">${g.recs.map(storePostHtml).join('')}</div>`;
+  document.getElementById('newVisitStore').onclick = () => { closeSheet('detailBackdrop'); openNewVisit(g.recs[0].id); };
+  g.recs.forEach(r => {
+    const eb = body.querySelector(`[data-edit="${r.id}"]`);
+    const db = body.querySelector(`[data-del="${r.id}"]`);
+    if (eb) eb.onclick = () => { closeSheet('detailBackdrop'); openEdit(r.id); };
+    if (db) db.onclick = () => deletePostFromStore(r.id, key);
+  });
   openSheet('detailBackdrop');
+}
+
+async function deletePostFromStore(id, key) {
+  if (!confirm('この記録を削除しますか？')) return;
+  const ok = await deleteRecordById(id);
+  if (!ok) return;
+  toast('削除しました');
+  const g = groupedRecords().find(x => x.key === key);
+  if (g) openStore(key); else { closeSheet('detailBackdrop'); currentStoreKey = null; }
 }
 
 // Create a fresh, separate record for the same place (keeps the old record).
@@ -1148,7 +1225,7 @@ function openNewVisit(id) {
   editState.googleRating = base.googleRating || null;
   document.getElementById('fName').value = base.name || '';
   document.getElementById('fAddr').value = base.address || '';
-  document.getElementById('editTitle').textContent = 'もう一度記録する';
+  document.getElementById('editTitle').textContent = '新しく記録する';
   if (map && base.lat != null) { map.setCenter({ lat: base.lat, lng: base.lng }); }
 }
 
