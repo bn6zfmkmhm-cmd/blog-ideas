@@ -261,13 +261,6 @@
     transition: opacity .2s, transform .2s; pointer-events: none; white-space: nowrap;
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
-
-  .maptip {
-    position: absolute; left: 50%; transform: translateX(-50%); top: 8px;
-    background: rgba(27,20,16,.9); border: 1px solid var(--border); color: var(--accent2);
-    font-size: 12px; padding: 6px 12px; border-radius: 20px; z-index: 4; pointer-events: none;
-    display: none;
-  }
 </style>
 </head>
 <body>
@@ -301,15 +294,13 @@
   <header>
     <div class="logo">まえ<span>ログ</span></div>
     <div class="spacer"></div>
-    <button class="icon-btn" id="pinModeBtn" title="地図タップで追加">📍</button>
-    <button class="icon-btn armed" id="shareBtn" title="共有ボード">👥</button>
+    <button class="icon-btn" id="settingsBtn" title="設定">⚙️</button>
     <button class="icon-btn" id="importBtn" title="読み込み">📥</button>
     <button class="icon-btn" id="exportBtn" title="書き出し">📤</button>
   </header>
 
   <div style="position:relative; flex:1 1 45%; display:flex; min-height:180px;">
     <div id="map"></div>
-    <div class="maptip" id="maptip">地図をタップして店を追加</div>
   </div>
 
   <div id="searchBar">
@@ -407,7 +398,7 @@
 <div class="sheet-backdrop" id="shareBackdrop">
   <div class="sheet">
     <div class="sheet-head">
-      <h2>共有ボード</h2>
+      <h2>設定</h2>
       <button class="close" data-close="shareBackdrop">×</button>
     </div>
     <div class="sheet-body" id="shareBody"></div>
@@ -460,8 +451,6 @@ let activeFilter = { type: 'all', value: null }; // all | tag | trip
 let searchQuery = '';
 let map, markerLib, markers = [];
 let editState = null; // current record being edited/created
-let pendingLatLng = null; // from map click
-let addMode = false;
 let currentStoreKey = null; // store group currently shown in the detail sheet
 
 /* ============================================================
@@ -716,13 +705,7 @@ async function initMap() {
     clickableIcons: false,
   });
   map.addListener('click', (e) => {
-    if (!addMode) return;
-    pendingLatLng = { lat: e.latLng.lat(), lng: e.latLng.lng() };
-    addMode = false;
-    document.getElementById('maptip').style.display = 'none';
-    document.getElementById('pinModeBtn').classList.remove('armed');
-    openEdit(null, pendingLatLng);
-    pendingLatLng = null;
+    openEdit(null, { lat: e.latLng.lat(), lng: e.latLng.lng() });
   });
 }
 
@@ -1250,7 +1233,7 @@ function todayStr() { const d = new Date(); return d.getFullYear() + '-' + Strin
 function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 function wireStaticHandlers() {
-  document.getElementById('fab').onclick = () => openEdit(null, pendingLatLng);
+  document.getElementById('fab').onclick = () => openEdit(null, null);
   document.getElementById('saveRecordBtn').onclick = saveRecord;
   document.getElementById('deleteRecordBtn').onclick = deleteRecord;
   document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => closeSheet(b.dataset.close));
@@ -1283,13 +1266,7 @@ function wireStaticHandlers() {
   document.getElementById('exportBtn').onclick = exportData;
   document.getElementById('importBtn').onclick = () => document.getElementById('importFile').click();
   document.getElementById('importFile').onchange = (e) => { if (e.target.files[0]) importData(e.target.files[0]); e.target.value = ''; };
-  document.getElementById('pinModeBtn').onclick = () => {
-    addMode = !addMode;
-    document.getElementById('pinModeBtn').classList.toggle('armed', addMode);
-    document.getElementById('maptip').style.display = addMode ? 'block' : 'none';
-    if (addMode) toast('地図をタップして場所を指定');
-  };
-  document.getElementById('shareBtn').onclick = openShareSheet;
+  document.getElementById('settingsBtn').onclick = openShareSheet;
 }
 </script>
 </body>
