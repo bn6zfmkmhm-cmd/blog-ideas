@@ -500,6 +500,25 @@ const FIREBASE_CONFIG = {
 const FIREBASE_SDK_VERSION = "12.15.0";
 const NICK_LS = 'gochimap.nickname';
 let myNickname = localStorage.getItem(NICK_LS) || '';
+const ADMIN_LS = 'gochimap.isAdmin';
+const ADMIN_PASSWORD = '5555';
+
+// Soft (UI-level, not database-enforced) check: only the post's own author may
+// edit/delete it, unless the operator confirms they're the admin and enters
+// the admin password (remembered on this device after the first success).
+function checkAdminAccess(r) {
+  if (!r.author || r.author === myNickname) return true; // own post, or no author info to check against
+  if (localStorage.getItem(ADMIN_LS) === '1') return true; // already unlocked on this device
+  const isAdmin = confirm('この操作は管理者のみ実行できます。あなたは管理者ですか？');
+  if (!isAdmin) return false;
+  const pw = window.prompt('管理者パスワードを入力してください');
+  if (pw === ADMIN_PASSWORD) {
+    localStorage.setItem(ADMIN_LS, '1');
+    return true;
+  }
+  toast('パスワードが違います');
+  return false;
+}
 let boardCode = localStorage.getItem(BOARD_LS) || null;
 let firestoreDb = null, firestoreMod = null, boardUnsub = null;
 let firebaseApp = null, storageMod = null, storageInst = null;
@@ -1220,8 +1239,8 @@ function openStore(key) {
   g.recs.forEach(r => {
     const eb = body.querySelector(`[data-edit="${r.id}"]`);
     const db = body.querySelector(`[data-del="${r.id}"]`);
-    if (eb) eb.onclick = () => { closeSheet('detailBackdrop'); openEdit(r.id); };
-    if (db) db.onclick = () => deletePostFromStore(r.id, key);
+    if (eb) eb.onclick = () => { if (!checkAdminAccess(r)) return; closeSheet('detailBackdrop'); openEdit(r.id); };
+    if (db) db.onclick = () => { if (!checkAdminAccess(r)) return; deletePostFromStore(r.id, key); };
   });
   openSheet('detailBackdrop');
 }
