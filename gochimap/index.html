@@ -483,12 +483,12 @@ async function requestPersistentStorage() {
 }
 
 /* ============================================================
-   Shared board (Firestore + Storage) — optional realtime sharing
-   with friends via a shared passphrase ("board code"). No accounts;
-   anyone who knows the code can read/write that board's records
-   and photos.
+   Shared board (Firestore + Storage) — the app always operates on
+   one fixed shared board (no private/local mode, no switching).
+   No accounts; anyone with the app's URL shares this one board's
+   records and photos.
    ============================================================ */
-const BOARD_LS = 'gochimap.board';
+const DEFAULT_BOARD_CODE = 'ふろんとばれえ';
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyA50_ljz8CY8ZVpIOrgHH9hfKiCpYre4PY",
   authDomain: "gochimap-share.firebaseapp.com",
@@ -519,7 +519,7 @@ function checkAdminAccess(r) {
   toast('パスワードが違います');
   return false;
 }
-let boardCode = localStorage.getItem(BOARD_LS) || null;
+const boardCode = DEFAULT_BOARD_CODE;
 let firestoreDb = null, firestoreMod = null, boardUnsub = null;
 let firebaseApp = null, storageMod = null, storageInst = null;
 
@@ -574,14 +574,6 @@ async function deleteBoardRecordPhotos(recordId) {
   } catch (e) { console.error('board photo cleanup failed', e); /* non-fatal */ }
 }
 
-function normalizeBoardCode(v) {
-  let s = (v || '').trim().toLowerCase().replace(/\s+/g, '-');
-  s = s.replace(/[\/\\.#$\[\]\x00-\x1f\x7f]/g, ''); // strip chars unsafe for a Firestore document ID
-  s = s.slice(0, 40);
-  return s;
-}
-function randomBoardCode() { return 'board-' + Math.random().toString(36).slice(2, 8); }
-
 async function connectBoard(code) {
   const fs = await getFirestore();
   if (boardUnsub) { boardUnsub(); boardUnsub = null; }
@@ -599,33 +591,6 @@ async function connectBoard(code) {
   });
 }
 
-async function joinBoard(rawCode) {
-  const code = normalizeBoardCode(rawCode);
-  if (code.length < 3) { toast('合言葉は3文字以上の半角英数字で入力してください'); return; }
-  try {
-    await connectBoard(code);
-    boardCode = code;
-    localStorage.setItem(BOARD_LS, code);
-    updateBoardChip();
-    closeSheet('shareBackdrop');
-    toast('共有ボードに接続しました');
-  } catch (e) {
-    console.error('joinBoard failed', e);
-    toast('共有への接続に失敗しました（通信環境をご確認ください）');
-  }
-}
-
-async function leaveBoard() {
-  if (boardUnsub) { boardUnsub(); boardUnsub = null; }
-  boardCode = null;
-  localStorage.removeItem(BOARD_LS);
-  updateBoardChip();
-  records = await dbGetAll();
-  renderFilters(); renderList(); renderMarkers();
-  closeSheet('shareBackdrop');
-  toast('自分だけのマップに戻りました');
-}
-
 function setNickname(v) {
   myNickname = (v || '').trim().slice(0, 20);
   localStorage.setItem(NICK_LS, myNickname);
@@ -641,59 +606,37 @@ function ensureNickname() {
 function updateBoardChip() {
   const chip = document.getElementById('boardChip');
   const btn = document.getElementById('shareBtn');
-  if (inBoardMode()) {
-    chip.textContent = '👥 ' + boardCode;
-    chip.style.display = 'inline-block';
-    btn.classList.add('armed');
-  } else {
-    chip.style.display = 'none';
-    btn.classList.remove('armed');
-  }
+  chip.textContent = '👥 ' + boardCode;
+  chip.style.display = 'inline-block';
+  btn.classList.add('armed');
 }
 
 function renderShareSheet() {
   const body = document.getElementById('shareBody');
-  if (inBoardMode()) {
-    body.innerHTML = `
-      <p class="sub" style="margin-bottom:16px">現在、下の合言葉でみんなと共有中です。同じ合言葉を仲間に伝えれば、同じマップに追加していけます。（写真もこの合言葉を知っている人に共有されます）</p>
-      <div class="field">
-        <label>あなたの表示名（投稿に「投稿した人」として表示されます）</label>
-        <input type="text" id="nickInput" placeholder="例: こうき" value="${escapeHtml(myNickname)}" maxlength="20" autocomplete="off">
+  body.innerHTML = `
+    <p class="sub" style="margin-bottom:16px">このアプリはみんなで1つのマップを共有しています。同じ合言葉を知っている人だけが見られます。（写真もこの合言葉を知っている人に共有されます）</p>
+    <div class="field">
+      <label>あなたの表示名（投稿に「投稿した人」として表示されます）</label>
+      <input type="text" id="nickInput" placeholder="例: こうき" value="${escapeHtml(myNickname)}" maxlength="20" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>合言葉</label>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input type="text" id="boardCodeDisplay" readonly value="${escapeHtml(boardCode)}" style="font-size:17px; font-weight:700;">
+        <button class="icon-btn" id="copyBoardBtn" title="コピー">📋</button>
       </div>
-      <div class="field">
-        <label>合言葉</label>
-        <div style="display:flex; gap:8px; align-items:center;">
-          <input type="text" id="boardCodeDisplay" readonly value="${escapeHtml(boardCode)}" style="font-size:17px; font-weight:700;">
-          <button class="icon-btn" id="copyBoardBtn" title="コピー">📋</button>
-        </div>
-      </div>
-      <div class="save-bar">
-        <button class="btn-save" id="saveNickBtn">表示名を保存</button>
-        <button class="btn-danger-text" id="leaveBoardBtn">共有をやめて自分だけのマップに戻る</button>
-      </div>`;
-    document.getElementById('copyBoardBtn').onclick = async () => {
-      try { await navigator.clipboard.writeText(boardCode); toast('コピーしました'); }
-      catch (e) { toast('コピーできませんでした'); }
-    };
-    document.getElementById('saveNickBtn').onclick = () => {
-      setNickname(document.getElementById('nickInput').value);
-      toast('表示名を保存しました');
-    };
-    document.getElementById('leaveBoardBtn').onclick = leaveBoard;
-  } else {
-    body.innerHTML = `
-      <p class="sub" style="margin-bottom:16px">仲間と同じ「合言葉」を使うと、1つのマップをみんなで編集できます。お店情報・評価・感想に加え、写真もこの合言葉を知っている人に共有されます。</p>
-      <div class="field">
-        <label>合言葉（3〜40文字、ひらがな・英数字OK）</label>
-        <input type="text" id="boardCodeInput" placeholder="例: おかやまごはん / okayama-gohan" autocomplete="off" autocapitalize="off" spellcheck="false">
-      </div>
-      <div class="save-bar">
-        <button class="btn-save" id="joinBoardBtn">この合言葉で共有をはじめる</button>
-      </div>
-      <button class="btn-danger-text" id="randomBoardBtn" style="color:var(--accent2)">ランダムな合言葉を生成する</button>`;
-    document.getElementById('joinBoardBtn').onclick = () => joinBoard(document.getElementById('boardCodeInput').value);
-    document.getElementById('randomBoardBtn').onclick = () => { document.getElementById('boardCodeInput').value = randomBoardCode(); };
-  }
+    </div>
+    <div class="save-bar">
+      <button class="btn-save" id="saveNickBtn">表示名を保存</button>
+    </div>`;
+  document.getElementById('copyBoardBtn').onclick = async () => {
+    try { await navigator.clipboard.writeText(boardCode); toast('コピーしました'); }
+    catch (e) { toast('コピーできませんでした'); }
+  };
+  document.getElementById('saveNickBtn').onclick = () => {
+    setNickname(document.getElementById('nickInput').value);
+    toast('表示名を保存しました');
+  };
 }
 
 function openShareSheet() { renderShareSheet(); openSheet('shareBackdrop'); }
@@ -767,12 +710,8 @@ async function startApp(key) {
       initMap(),
       new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000)),
     ]);
-    if (boardCode) {
-      try { await connectBoard(boardCode); }
-      catch (e) { console.error('auto-reconnect failed', e); toast('共有ボードへの再接続に失敗しました'); records = await dbGetAll(); }
-    } else {
-      records = await dbGetAll();
-    }
+    try { await connectBoard(boardCode); }
+    catch (e) { console.error('board connect failed', e); toast('共有ボードへの接続に失敗しました（通信環境をご確認ください）'); records = await dbGetAll(); }
     updateBoardChip();
     renderFilters();
     renderList();
