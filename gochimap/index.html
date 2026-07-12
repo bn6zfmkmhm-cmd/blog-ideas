@@ -118,6 +118,10 @@
   #searchInput::placeholder { color: var(--muted); }
   #searchInput:focus { outline: none; border-color: var(--accent); }
   #searchInput::-webkit-search-cancel-button { -webkit-appearance: none; }
+  #sortSelect {
+    flex-shrink: 0; padding: 8px 10px; border-radius: 10px; font-size: 13px;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+  }
   .search-clear {
     flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%;
     background: var(--surface2); border: 1px solid var(--border); color: var(--muted);
@@ -329,6 +333,7 @@
   <header>
     <div class="logo">まえ<span>ログ</span></div>
     <div class="spacer"></div>
+    <button class="icon-btn" id="myLocationBtn" title="現在地">📍</button>
     <button class="icon-btn" id="settingsBtn" title="設定">⚙️</button>
     <button class="icon-btn" id="importBtn" title="読み込み">📥</button>
     <button class="icon-btn" id="exportBtn" title="書き出し">📤</button>
@@ -344,6 +349,12 @@
         <span class="search-ic">🔍</span>
         <input id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="店名・タグ・感想で検索" autocomplete="off">
         <button id="searchClear" class="search-clear" style="display:none">×</button>
+        <select id="sortSelect" title="並べ替え">
+          <option value="newest">新しい順</option>
+          <option value="rating">評価が高い順</option>
+          <option value="postcount">投稿が多い順</option>
+          <option value="near">近い順</option>
+        </select>
       </div>
 
       <div id="filters"></div>
@@ -496,6 +507,10 @@ function dbDelete(id) {
 let records = [];
 let activeFilter = { type: 'all', value: null }; // all | tag | trip
 let searchQuery = '';
+let minRatingFilter = false; // toggle: only show stores averaging ★4+
+let sortMode = 'newest'; // newest | rating | postcount | near
+let myLocation = null; // { lat, lng } once geolocation succeeds
+let myLocationMarker = null;
 let map, markerLib, markers = [];
 let editState = null; // current record being edited/created
 let currentStoreKey = null; // store group currently shown in the detail sheet
@@ -807,23 +822,69 @@ function storeKey(r) {
   const ln = (typeof r.lng === 'number') ? r.lng.toFixed(4) : 'y';
   return 'n:' + (r.name || '') + '@' + la + ',' + ln;
 }
-// Groups of records by store, each group's records newest-first, groups newest-first.
+// Distance between two {lat,lng} points in kilometers (haversine).
+function distanceKm(a, b) {
+  const R = 6371;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLng = (b.lng - a.lng) * Math.PI / 180;
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+}
+
+function sortGroups(groups) {
+  if (sortMode === 'rating') return groups.slice().sort((a, b) => b.avgRating - a.avgRating);
+  if (sortMode === 'postcount') return groups.slice().sort((a, b) => b.recs.length - a.recs.length);
+  if (sortMode === 'near' && myLocation) {
+    return groups.slice().sort((a, b) => distanceKm(myLocation, a) - distanceKm(myLocation, b));
+  }
+  // newest (default), and 'near' fallback before a location is known
+  return groups.slice().sort((a, b) => (b.latest.visitedDate || '').localeCompare(a.latest.visitedDate || '') || b.latest.createdAt - a.latest.createdAt);
+}
+
+// Groups of records by store, each group's records newest-first.
 function groupedRecords() {
-  const rs = filteredRecords(); // already sorted newest-first
+  const rs = filteredRecords();
   const byKey = new Map();
   rs.forEach(r => {
     const k = storeKey(r);
     if (!byKey.has(k)) byKey.set(k, []);
     byKey.get(k).push(r);
   });
-  const groups = [];
+  let groups = [];
   for (const [key, recs] of byKey) {
     const latest = recs[0];
     const avgRating = recs.reduce((sum, r) => sum + (r.myRating || 0), 0) / recs.length;
     groups.push({ key, recs, latest, avgRating, name: latest.name, address: latest.address, lat: latest.lat, lng: latest.lng, placeId: latest.placeId, googleRating: latest.googleRating });
   }
-  groups.sort((a, b) => (b.latest.visitedDate || '').localeCompare(a.latest.visitedDate || '') || b.latest.createdAt - a.latest.createdAt);
-  return groups;
+  if (minRatingFilter) groups = groups.filter(g => g.avgRating >= 4);
+  return sortGroups(groups);
+}
+
+function renderMyLocationMarker() {
+  if (!map || !markerLib || !myLocation) return;
+  if (myLocationMarker) myLocationMarker.map = null;
+  const dot = document.createElement('div');
+  dot.style.cssText = 'width:16px;height:16px;border-radius:50%;background:#4285F4;border:3px solid #fff;box-shadow:0 0 0 2px rgba(66,133,244,.4)';
+  myLocationMarker = new markerLib.AdvancedMarkerElement({ map, position: myLocation, content: dot, zIndex: 999 });
+}
+
+function goToMyLocation() {
+  if (!navigator.geolocation) { toast('この端末は位置情報に対応していません'); return; }
+  toast('現在地を取得中…');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      myLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      if (map) { map.setCenter(myLocation); map.setZoom(15); }
+      renderMyLocationMarker();
+      toast('現在地に移動しました');
+      if (sortMode === 'near') { renderList(); renderMarkers(); }
+    },
+    (err) => {
+      console.error('geolocation failed', err);
+      toast('現在地を取得できませんでした（位置情報の許可をご確認ください）');
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
 }
 
 function renderMarkers() {
@@ -874,7 +935,16 @@ function renderFilters() {
     c.onclick = () => { activeFilter = { type, value }; renderFilters(); renderList(); renderMarkers(); };
     return c;
   };
-  el.appendChild(mk('すべて (' + records.length + ')', 'all', null));
+  const allChip = mk('すべて (' + records.length + ')', 'all', null);
+  allChip.onclick = () => { activeFilter = { type: 'all', value: null }; minRatingFilter = false; renderFilters(); renderList(); renderMarkers(); };
+  el.appendChild(allChip);
+
+  const ratingChip = document.createElement('button');
+  ratingChip.className = 'chip' + (minRatingFilter ? ' active' : '');
+  ratingChip.textContent = '★4以上';
+  ratingChip.onclick = () => { minRatingFilter = !minRatingFilter; renderFilters(); renderList(); renderMarkers(); };
+  el.appendChild(ratingChip);
+
   allTrips().forEach(t => el.appendChild(mk('🧳 ' + t, 'trip', t)));
   allTags().forEach(t => el.appendChild(mk('#' + t, 'tag', t)));
 }
@@ -1376,6 +1446,12 @@ function wireStaticHandlers() {
   document.getElementById('importBtn').onclick = () => document.getElementById('importFile').click();
   document.getElementById('importFile').onchange = (e) => { if (e.target.files[0]) importData(e.target.files[0]); e.target.value = ''; };
   document.getElementById('settingsBtn').onclick = openShareSheet;
+  document.getElementById('myLocationBtn').onclick = goToMyLocation;
+  document.getElementById('sortSelect').onchange = (e) => {
+    sortMode = e.target.value;
+    if (sortMode === 'near' && !myLocation) { goToMyLocation(); }
+    renderList(); renderMarkers();
+  };
   document.getElementById('lightboxClose').onclick = closeLightbox;
   document.getElementById('lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') closeLightbox(); });
   document.getElementById('lightboxPrev').onclick = () => { lightboxIndex = (lightboxIndex - 1 + lightboxSrcs.length) % lightboxSrcs.length; renderLightbox(); };
