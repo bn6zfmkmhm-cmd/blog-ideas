@@ -276,6 +276,26 @@
     transition: opacity .2s, transform .2s; pointer-events: none; white-space: nowrap;
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+
+  /* photo lightbox */
+  .zoomable-photo { cursor: zoom-in; }
+  .lightbox {
+    position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.92);
+    display: none; align-items: center; justify-content: center;
+  }
+  .lightbox.open { display: flex; }
+  .lightbox img { max-width: 92vw; max-height: 88vh; object-fit: contain; border-radius: 8px; }
+  .lightbox-close, .lightbox-nav {
+    position: absolute; background: rgba(255,255,255,.15); color: #fff; border: none;
+    display: flex; align-items: center; justify-content: center; line-height: 1;
+  }
+  .lightbox-close {
+    top: max(14px, env(safe-area-inset-top)); right: 16px;
+    width: 40px; height: 40px; border-radius: 50%; font-size: 22px;
+  }
+  .lightbox-nav { top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border-radius: 50%; font-size: 26px; }
+  .lightbox-nav.prev { left: 10px; }
+  .lightbox-nav.next { right: 10px; }
 </style>
 </head>
 <body>
@@ -424,6 +444,14 @@
   </div>
 </div>
 
+<!-- ===== Photo lightbox ===== -->
+<div class="lightbox" id="lightbox">
+  <button class="lightbox-close" id="lightboxClose">×</button>
+  <button class="lightbox-nav prev" id="lightboxPrev">‹</button>
+  <img id="lightboxImg" src="">
+  <button class="lightbox-nav next" id="lightboxNext">›</button>
+</div>
+
 <div class="toast" id="toast"></div>
 <input type="file" id="importFile" accept="application/json,.json" style="display:none">
 
@@ -543,7 +571,15 @@ async function getFirestore() {
     getFirebaseApp(),
     import(firebaseSdkUrl('firebase-firestore.js')),
   ]);
-  firestoreDb = fs.getFirestore(app);
+  try {
+    // Cache reads locally (IndexedDB) so the board's data is still viewable offline.
+    firestoreDb = fs.initializeFirestore(app, {
+      localCache: fs.persistentLocalCache({ tabManager: fs.persistentSingleTabManager() }),
+    });
+  } catch (e) {
+    console.error('offline persistence unavailable, using in-memory Firestore', e);
+    firestoreDb = fs.getFirestore(app);
+  }
   firestoreMod = fs;
   return fs;
 }
@@ -672,6 +708,9 @@ function reconfigureKey() { localStorage.removeItem(KEY_LS); location.reload(); 
    Init
    ============================================================ */
 window.addEventListener('DOMContentLoaded', async () => {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch((e) => console.error('SW registration failed', e));
+  }
   db = await openDB();
   const key = localStorage.getItem(KEY_LS);
   if (key) { startApp(key); }
@@ -1138,7 +1177,9 @@ async function deleteRecord() {
 // One post (single visit record) inside the store view.
 function storePostHtml(r) {
   const srcs = photoSrcs(r);
-  const photos = srcs.length ? `<div class="detail-photos">${srcs.map(s => `<img src="${s}">`).join('')}</div>` : '';
+  const photos = srcs.length
+    ? `<div class="detail-photos">${srcs.map((s, i) => `<img src="${s}" class="zoomable-photo" data-post="${r.id}" data-idx="${i}">`).join('')}</div>`
+    : '';
   const tags = (r.tags || []).map(t => `<span class="minitag">#${escapeHtml(t)}</span>`).join(' ');
   const trip = r.trip ? `<span class="minitag">🧳 ${escapeHtml(r.trip)}</span>` : '';
   const author = r.author ? ` ・ 🙋 ${escapeHtml(r.author)}` : '';
@@ -1182,8 +1223,33 @@ function openStore(key) {
     if (eb) eb.onclick = () => { if (!checkAdminAccess(r)) return; closeSheet('detailBackdrop'); openEdit(r.id); };
     if (db) db.onclick = () => { if (!checkAdminAccess(r)) return; deletePostFromStore(r.id, key); };
   });
+  body.querySelectorAll('.zoomable-photo').forEach(img => {
+    img.onclick = () => {
+      const rec = g.recs.find(x => x.id === img.dataset.post);
+      if (rec) openLightbox(photoSrcs(rec), Number(img.dataset.idx));
+    };
+  });
   openSheet('detailBackdrop');
 }
+
+/* ============================================================
+   Photo lightbox (tap a post photo to view it enlarged)
+   ============================================================ */
+let lightboxSrcs = [], lightboxIndex = 0;
+function openLightbox(srcs, startIndex) {
+  if (!srcs || !srcs.length) return;
+  lightboxSrcs = srcs;
+  lightboxIndex = startIndex || 0;
+  renderLightbox();
+  document.getElementById('lightbox').classList.add('open');
+}
+function renderLightbox() {
+  document.getElementById('lightboxImg').src = lightboxSrcs[lightboxIndex];
+  const multi = lightboxSrcs.length > 1;
+  document.getElementById('lightboxPrev').style.display = multi ? 'flex' : 'none';
+  document.getElementById('lightboxNext').style.display = multi ? 'flex' : 'none';
+}
+function closeLightbox() { document.getElementById('lightbox').classList.remove('open'); }
 
 async function deletePostFromStore(id, key) {
   if (!confirm('この投稿を削除しますか？')) return;
@@ -1310,6 +1376,10 @@ function wireStaticHandlers() {
   document.getElementById('importBtn').onclick = () => document.getElementById('importFile').click();
   document.getElementById('importFile').onchange = (e) => { if (e.target.files[0]) importData(e.target.files[0]); e.target.value = ''; };
   document.getElementById('settingsBtn').onclick = openShareSheet;
+  document.getElementById('lightboxClose').onclick = closeLightbox;
+  document.getElementById('lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') closeLightbox(); });
+  document.getElementById('lightboxPrev').onclick = () => { lightboxIndex = (lightboxIndex - 1 + lightboxSrcs.length) % lightboxSrcs.length; renderLightbox(); };
+  document.getElementById('lightboxNext').onclick = () => { lightboxIndex = (lightboxIndex + 1) % lightboxSrcs.length; renderLightbox(); };
 }
 </script>
 </body>
