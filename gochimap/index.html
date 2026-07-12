@@ -87,10 +87,6 @@
   }
   .icon-btn:active { background: var(--border); }
   .icon-btn.armed { background: var(--accent); border-color: var(--accent); color: #1b1410; }
-  header .board-chip {
-    font-size: 11px; padding: 4px 10px; border-radius: 20px; white-space: nowrap;
-    background: var(--surface2); border: 1px solid var(--border); color: var(--accent2);
-  }
 
   #map { flex: 1 1 45%; width: 100%; background: var(--surface2); min-height: 180px; }
 
@@ -304,10 +300,9 @@
 <div id="app">
   <header>
     <div class="logo">まえ<span>ログ</span></div>
-    <div class="board-chip" id="boardChip" style="display:none"></div>
     <div class="spacer"></div>
     <button class="icon-btn" id="pinModeBtn" title="地図タップで追加">📍</button>
-    <button class="icon-btn" id="shareBtn" title="共有ボード">👥</button>
+    <button class="icon-btn armed" id="shareBtn" title="共有ボード">👥</button>
     <button class="icon-btn" id="importBtn" title="読み込み">📥</button>
     <button class="icon-btn" id="exportBtn" title="書き出し">📤</button>
   </header>
@@ -603,36 +598,17 @@ function ensureNickname() {
   return myNickname;
 }
 
-function updateBoardChip() {
-  const chip = document.getElementById('boardChip');
-  const btn = document.getElementById('shareBtn');
-  chip.textContent = '👥 ' + boardCode;
-  chip.style.display = 'inline-block';
-  btn.classList.add('armed');
-}
-
 function renderShareSheet() {
   const body = document.getElementById('shareBody');
   body.innerHTML = `
-    <p class="sub" style="margin-bottom:16px">このアプリはみんなで1つのマップを共有しています。同じ合言葉を知っている人だけが見られます。（写真もこの合言葉を知っている人に共有されます）</p>
+    <p class="sub" style="margin-bottom:16px">このアプリはみんなで1つのマップを共有しています。投稿・写真はここを使う人全員に公開されます。</p>
     <div class="field">
       <label>あなたの表示名（投稿に「投稿した人」として表示されます）</label>
       <input type="text" id="nickInput" placeholder="例: こうき" value="${escapeHtml(myNickname)}" maxlength="20" autocomplete="off">
     </div>
-    <div class="field">
-      <label>合言葉</label>
-      <div style="display:flex; gap:8px; align-items:center;">
-        <input type="text" id="boardCodeDisplay" readonly value="${escapeHtml(boardCode)}" style="font-size:17px; font-weight:700;">
-        <button class="icon-btn" id="copyBoardBtn" title="コピー">📋</button>
-      </div>
-    </div>
     <div class="save-bar">
       <button class="btn-save" id="saveNickBtn">表示名を保存</button>
     </div>`;
-  document.getElementById('copyBoardBtn').onclick = async () => {
-    try { await navigator.clipboard.writeText(boardCode); toast('コピーしました'); }
-    catch (e) { toast('コピーできませんでした'); }
-  };
   document.getElementById('saveNickBtn').onclick = () => {
     setNickname(document.getElementById('nickInput').value);
     toast('表示名を保存しました');
@@ -712,7 +688,6 @@ async function startApp(key) {
     ]);
     try { await connectBoard(boardCode); }
     catch (e) { console.error('board connect failed', e); toast('共有ボードへの接続に失敗しました（通信環境をご確認ください）'); records = await dbGetAll(); }
-    updateBoardChip();
     renderFilters();
     renderList();
     renderMarkers();
