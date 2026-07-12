@@ -90,6 +90,21 @@
 
   #map { flex: 1 1 45%; width: 100%; background: var(--surface2); min-height: 180px; }
 
+  /* main layout: map + side panel (search/filters/list) */
+  #mainArea { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  #mapWrap { position: relative; flex: 1 1 45%; display: flex; min-height: 180px; }
+  #sidePanel { display: contents; } /* mobile: children behave exactly as before, flush against #mainArea */
+
+  /* on wider (PC-sized) screens, show map and list side by side instead of stacked */
+  @media (min-width: 900px) {
+    #mainArea { flex-direction: row; }
+    #mapWrap { flex: 1 1 55%; min-height: 0; }
+    #sidePanel {
+      display: flex; flex-direction: column; flex: 1 1 45%;
+      min-height: 0; border-left: 1px solid var(--border);
+    }
+  }
+
   /* search bar */
   #searchBar {
     display: flex; align-items: center; gap: 8px; padding: 9px 12px;
@@ -299,19 +314,23 @@
     <button class="icon-btn" id="exportBtn" title="書き出し">📤</button>
   </header>
 
-  <div style="position:relative; flex:1 1 45%; display:flex; min-height:180px;">
-    <div id="map"></div>
+  <div id="mainArea">
+    <div id="mapWrap">
+      <div id="map"></div>
+    </div>
+
+    <div id="sidePanel">
+      <div id="searchBar">
+        <span class="search-ic">🔍</span>
+        <input id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="店名・タグ・感想で検索" autocomplete="off">
+        <button id="searchClear" class="search-clear" style="display:none">×</button>
+      </div>
+
+      <div id="filters"></div>
+
+      <div id="list"></div>
+    </div>
   </div>
-
-  <div id="searchBar">
-    <span class="search-ic">🔍</span>
-    <input id="searchInput" type="search" inputmode="search" enterkeyhint="search" placeholder="店名・タグ・感想で検索" autocomplete="off">
-    <button id="searchClear" class="search-clear" style="display:none">×</button>
-  </div>
-
-  <div id="filters"></div>
-
-  <div id="list"></div>
 
   <button id="fab">＋</button>
 </div>
