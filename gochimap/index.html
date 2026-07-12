@@ -216,6 +216,14 @@
   .star-input span { color: var(--border); transition: color .1s; }
   .star-input span.on { color: var(--gold); }
 
+  /* visited / want-to-go status toggle */
+  .status-toggle { display: flex; gap: 8px; margin-bottom: 18px; }
+  .status-btn {
+    flex: 1; padding: 11px; border-radius: 11px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--muted); font-weight: 700; font-size: 14px;
+  }
+  .status-btn.active { background: var(--accent); border-color: var(--accent); color: #1b1410; }
+
   /* photo picker */
   .photo-grid { display: flex; gap: 8px; flex-wrap: wrap; }
   .photo-grid .ph {
@@ -261,6 +269,7 @@
 
   /* store detail (grouped posts) */
   .count-badge { font-size: 11px; font-weight: 700; color: var(--accent2); background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; vertical-align: middle; white-space: nowrap; }
+  .want-badge { font-size: 12px; font-weight: 700; color: #8a5cf0; }
   .card .meta .avg-num { font-size: 12px; color: var(--accent2); font-weight: 700; }
   .posts { display: flex; flex-direction: column; gap: 14px; margin-top: 4px; }
   .post { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: var(--surface); }
@@ -374,6 +383,10 @@
       <button class="close" data-close="editBackdrop">×</button>
     </div>
     <div class="sheet-body">
+      <div class="status-toggle" id="statusToggle">
+        <button type="button" class="status-btn" data-status="visited">🍽 行った</button>
+        <button type="button" class="status-btn" data-status="want">🔖 行きたい</button>
+      </div>
       <div class="field">
         <label>お店を検索</label>
         <div id="pacHost"></div>
@@ -387,7 +400,7 @@
         <label>住所・場所メモ</label>
         <input type="text" id="fAddr" placeholder="任意">
       </div>
-      <div class="field">
+      <div class="field" id="ratingField">
         <label>自分の評価</label>
         <div class="star-input" id="starInput">
           <span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span>
@@ -412,7 +425,7 @@
         <label>一言メモ</label>
         <input type="text" id="fMemo" placeholder="ぱっと見返す用の短い感想">
       </div>
-      <div class="field">
+      <div class="field" id="reviewField">
         <label>感想（じっくり）</label>
         <textarea id="fReview" placeholder="味・雰囲気・また来たいか など自由に"></textarea>
       </div>
@@ -853,10 +866,12 @@ function groupedRecords() {
   let groups = [];
   for (const [key, recs] of byKey) {
     const latest = recs[0];
-    const avgRating = recs.reduce((sum, r) => sum + (r.myRating || 0), 0) / recs.length;
-    groups.push({ key, recs, latest, avgRating, name: latest.name, address: latest.address, lat: latest.lat, lng: latest.lng, placeId: latest.placeId, googleRating: latest.googleRating });
+    const visitedRecs = recs.filter(r => r.status !== 'want');
+    const hasVisited = visitedRecs.length > 0;
+    const avgRating = hasVisited ? visitedRecs.reduce((sum, r) => sum + (r.myRating || 0), 0) / visitedRecs.length : 0;
+    groups.push({ key, recs, latest, avgRating, hasVisited, name: latest.name, address: latest.address, lat: latest.lat, lng: latest.lng, placeId: latest.placeId, googleRating: latest.googleRating });
   }
-  if (minRatingFilter) groups = groups.filter(g => g.avgRating >= 4);
+  if (minRatingFilter) groups = groups.filter(g => g.hasVisited && g.avgRating >= 4);
   return sortGroups(groups);
 }
 
@@ -894,12 +909,19 @@ function renderMarkers() {
   const groups = groupedRecords();
   const bounds = new google.maps.LatLngBounds();
   groups.forEach(g => {
-    const pin = new markerLib.PinElement({
-      background: pinColor(g.latest.myRating),
-      borderColor: '#1b1410',
-      glyphColor: '#1b1410',
-      glyph: '',
-    });
+    const pin = g.hasVisited
+      ? new markerLib.PinElement({
+          background: pinColor(g.avgRating),
+          borderColor: '#1b1410',
+          glyphColor: '#1b1410',
+          glyph: '',
+        })
+      : new markerLib.PinElement({
+          background: '#8a5cf0',
+          borderColor: '#1b1410',
+          glyphColor: '#ffffff',
+          glyph: '🔖',
+        });
     const marker = new markerLib.AdvancedMarkerElement({
       map, position: { lat: g.lat, lng: g.lng }, content: pin.element, title: g.name,
     });
@@ -1015,15 +1037,23 @@ function renderList() {
     const tags = [...tagSet].map(t => `<span class="minitag">#${escapeHtml(t)}</span>`).join('');
     const trip = latest.trip ? `<span class="minitag">🧳 ${escapeHtml(latest.trip)}</span>` : '';
     const countBadge = g.recs.length > 1 ? `<span class="count-badge">📝 ${g.recs.length}件</span>` : '';
-    const ratingHtml = g.recs.length > 1
-      ? `<span class="stars">${starStrPrecise(g.avgRating)}</span><span class="avg-num">${g.avgRating.toFixed(1)}</span>${countBadge}`
-      : `<span class="stars">${starStr(latest.myRating)}</span>`;
+    const visitedRecs = g.recs.filter(r => r.status !== 'want');
+    const wantOnly = visitedRecs.length === 0;
+    const displayRec = wantOnly ? latest : visitedRecs[0];
+    let ratingHtml;
+    if (wantOnly) {
+      ratingHtml = `<span class="want-badge">🔖 行きたい</span>${countBadge}`;
+    } else if (visitedRecs.length > 1) {
+      ratingHtml = `<span class="stars">${starStrPrecise(g.avgRating)}</span><span class="avg-num">${g.avgRating.toFixed(1)}</span>${countBadge}`;
+    } else {
+      ratingHtml = `<span class="stars">${starStr(displayRec.myRating)}</span>${countBadge}`;
+    }
     card.innerHTML = `
       ${thumb}
       <div class="body">
         <div class="name">${escapeHtml(latest.name)}</div>
-        <div class="meta">${ratingHtml}<span>${latest.visitedDate || ''}</span>${latest.author ? `<span>🙋 ${escapeHtml(latest.author)}</span>` : ''}</div>
-        <div class="memo">${escapeHtml(latest.memo || latest.review || '')}</div>
+        <div class="meta">${ratingHtml}<span>${displayRec.visitedDate || ''}</span>${displayRec.author ? `<span>🙋 ${escapeHtml(displayRec.author)}</span>` : ''}</div>
+        <div class="memo">${escapeHtml(displayRec.memo || displayRec.review || '')}</div>
         <div class="tagline">${trip}${tags}</div>
       </div>`;
     card.onclick = () => openStore(g.key);
@@ -1068,13 +1098,27 @@ function setRating(n) {
   });
 }
 
+// Toggle between a normal visited post and a lightweight "want to go" entry
+// (no rating/review/photos — just the place, tags, trip, and a memo).
+function setStatus(status) {
+  editState.status = status;
+  document.querySelectorAll('#statusToggle .status-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.status === status);
+  });
+  const isWant = status === 'want';
+  document.getElementById('ratingField').style.display = isWant ? 'none' : 'block';
+  document.getElementById('reviewField').style.display = isWant ? 'none' : 'block';
+  document.getElementById('photoField').style.display = isWant ? 'none' : 'block';
+  document.getElementById('boardPhotoHint').style.display = (isWant || !inBoardMode()) ? 'none' : 'block';
+}
+
 function openEdit(id, latlng) {
   const isNew = !id;
   if (isNew) {
     editState = {
       id: 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
       name: '', address: '', lat: latlng ? latlng.lat : null, lng: latlng ? latlng.lng : null,
-      placeId: '', googleRating: null, myRating: 0, memo: '', review: '',
+      placeId: '', googleRating: null, myRating: 0, memo: '', review: '', status: 'visited',
       tags: [], trip: '', visitedDate: todayStr(), photos: [], photoUrls: [], createdAt: Date.now(), updatedAt: Date.now(),
     };
   } else {
@@ -1094,9 +1138,9 @@ function openEdit(id, latlng) {
   document.getElementById('fMemo').value = editState.memo || '';
   document.getElementById('fReview').value = editState.review || '';
   setRating(editState.myRating || 0);
+  setStatus(editState.status || 'visited');
   refreshTripList();
   renderPhotoGrid();
-  document.getElementById('boardPhotoHint').style.display = inBoardMode() ? 'block' : 'none';
   document.getElementById('deleteRecordBtn').style.display = isNew ? 'none' : 'block';
   ensureAutocomplete();
   openSheet('editBackdrop');
@@ -1177,6 +1221,13 @@ async function saveRecord() {
   editState.review = document.getElementById('fReview').value.trim();
   editState.myRating = selectedRating;
   editState.updatedAt = Date.now();
+  if (editState.status === 'want') {
+    // a wishlist entry carries no rating/review/photos, regardless of leftover hidden-field values
+    editState.myRating = 0;
+    editState.review = '';
+    editState.photos = [];
+    editState.photoUrls = [];
+  }
   if (editState.lat == null || editState.lng == null) {
     // no location chosen: place at current map center so it still appears
     const c = map.getCenter();
@@ -1253,9 +1304,12 @@ function storePostHtml(r) {
   const tags = (r.tags || []).map(t => `<span class="minitag">#${escapeHtml(t)}</span>`).join(' ');
   const trip = r.trip ? `<span class="minitag">🧳 ${escapeHtml(r.trip)}</span>` : '';
   const author = r.author ? ` ・ 🙋 ${escapeHtml(r.author)}` : '';
+  const ratingOrWant = r.status === 'want'
+    ? `<span class="want-badge">🔖 行きたい</span>`
+    : `<span class="stars">${starStr(r.myRating)}</span>`;
   return `<div class="post">
     <div class="post-head">
-      <span class="stars">${starStr(r.myRating)}</span>
+      ${ratingOrWant}
       <span class="post-date">${r.visitedDate || ''}${author}</span>
     </div>
     ${photos}
@@ -1421,6 +1475,9 @@ function wireStaticHandlers() {
   });
   document.querySelectorAll('#starInput span').forEach(s => {
     s.onclick = () => setRating(Number(s.dataset.v));
+  });
+  document.querySelectorAll('#statusToggle .status-btn').forEach(b => {
+    b.onclick = () => setStatus(b.dataset.status);
   });
   document.getElementById('photoInput').onchange = (e) => {
     const files = Array.from(e.target.files); // snapshot before clearing the input
