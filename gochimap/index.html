@@ -728,7 +728,9 @@ function renderShareSheet() {
     <div class="save-bar">
       <button class="btn-save" id="saveNickBtn">表示名を保存</button>
     </div>
-    ${isAdminUnlocked() ? '' : '<div class="save-bar" style="margin-top:20px"><button class="chip" id="unlockAdminBtn" type="button">🔐 管理者機能を有効にする</button></div>'}`;
+    <div class="save-bar" style="margin-top:20px">${isAdminUnlocked()
+      ? '<button class="chip" id="lockAdminBtn" type="button">🔒 管理者機能を無効にする</button>'
+      : '<button class="chip" id="unlockAdminBtn" type="button">🔐 管理者機能を有効にする</button>'}</div>`;
   document.getElementById('saveNickBtn').onclick = () => {
     setNickname(document.getElementById('nickInput').value);
     toast('表示名を保存しました');
@@ -741,6 +743,15 @@ function renderShareSheet() {
         renderShareSheet();
         toast('管理者機能を有効にしました');
       }
+    };
+  }
+  const lockBtn = document.getElementById('lockAdminBtn');
+  if (lockBtn) {
+    lockBtn.onclick = () => {
+      localStorage.removeItem(ADMIN_LS);
+      updateAdminUI();
+      renderShareSheet();
+      toast('管理者機能を無効にしました');
     };
   }
 }
@@ -1529,38 +1540,14 @@ function openStore(key) {
     : `https://www.google.com/maps/search/?api=1&query=${g.lat},${g.lng}`;
   const countLine = g.recs.length > 1 ? ` ・ ${g.recs.length}件の投稿` : '';
   const pioneerRec = g.recs.reduce((a, b) => (a.createdAt < b.createdAt ? a : b));
-  const shareUrl = location.origin + location.pathname + '?store=' + encodeURIComponent(g.key);
   body.innerHTML = `
     <div class="detail-title">${escapeHtml(g.name)}</div>
     <div class="detail-addr">${escapeHtml(g.address || '')}${countLine}</div>
     ${g.googleRating ? `<div class="detail-meta" style="margin-bottom:10px">Googleの評価: ★ ${g.googleRating.toFixed(1)}</div>` : ''}
     <a class="gmaps-link" href="${mapsUrl}" target="_blank" rel="noopener">📍 Googleマップで開く</a>
-    <div style="display:flex; gap:8px; margin-top:10px;">
-      <button class="chip" id="copyStoreLink" type="button">🔗 リンクをコピー</button>
-      <button class="chip" id="lineShareStore" type="button">💬 LINEで送る</button>
-    </div>
     <div class="save-bar" style="margin:16px 0 8px"><button class="btn-save" id="newVisitStore">新しく投稿する</button></div>
     <div class="posts">${g.recs.map(r => storePostHtml(r, g.recs.length > 1 && r.id === pioneerRec.id)).join('')}</div>`;
   document.getElementById('newVisitStore').onclick = () => { closeSheet('detailBackdrop'); openNewVisit(g.recs[0].id); };
-  document.getElementById('copyStoreLink').onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-    } catch (e) {
-      const ta = document.createElement('textarea');
-      ta.value = shareUrl;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-    }
-    toast('リンクをコピーしました');
-  };
-  document.getElementById('lineShareStore').onclick = () => {
-    const text = g.name + ' ' + shareUrl;
-    window.open('https://social-plugins.line.me/lineit/share?url=' + encodeURIComponent(shareUrl) + '&text=' + encodeURIComponent(text), '_blank', 'noopener');
-  };
   g.recs.forEach(r => {
     const eb = body.querySelector(`[data-edit="${r.id}"]`);
     const db = body.querySelector(`[data-del="${r.id}"]`);
