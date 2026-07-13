@@ -147,6 +147,14 @@
     background: var(--surface2); border: 1px solid var(--border); color: var(--muted); white-space: nowrap;
   }
   .chip.active { background: var(--accent); border-color: var(--accent); color: #1b1410; font-weight: 700; }
+  .chip.danger { color: var(--danger); border-color: var(--danger); }
+  .draft-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 12px 4px; border-bottom: 1px solid var(--border);
+  }
+  .draft-name { font-weight: 700; font-size: 14px; }
+  .draft-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .draft-actions { display: flex; gap: 8px; flex-shrink: 0; }
 
   /* list */
   #list { flex: 1 1 55%; overflow-y: auto; padding: 10px 12px calc(90px + var(--safe-bottom)); -webkit-overflow-scrolling: touch; transition: flex-basis .25s ease; }
@@ -184,6 +192,13 @@
     box-shadow: 0 6px 18px rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center;
   }
   #fab:active { background: var(--accent2); }
+  #draftsBtn {
+    position: fixed; right: 18px; bottom: calc(18px + 60px + 12px + var(--safe-bottom)); z-index: 20;
+    padding: 10px 16px; border-radius: 20px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text); font-size: 13px; font-weight: 700;
+    box-shadow: 0 4px 14px rgba(0,0,0,.4);
+  }
+  #draftsBtn:active { background: var(--border); }
 
   /* ---------- Modal / sheet ---------- */
   .sheet-backdrop {
@@ -370,6 +385,8 @@
     <div class="logo">まえ<span>ログ</span></div>
     <div class="spacer"></div>
     <button class="icon-btn" id="myLocationBtn" title="現在地">📍</button>
+    <button class="icon-btn" id="heatmapBtn" title="投稿密度ヒートマップ">🔥</button>
+    <button class="icon-btn" id="gachaBtn" title="シェフの気まぐれ">🎲</button>
     <button class="icon-btn" id="statsBtn" title="統計">📊</button>
     <button class="icon-btn" id="settingsBtn" title="設定">⚙️</button>
     <button class="icon-btn" id="importBtn" title="読み込み">📥</button>
@@ -400,6 +417,7 @@
     </div>
   </div>
 
+  <button id="draftsBtn" style="display:none" type="button">📝 下書き (<span id="draftsCount">0</span>)</button>
   <button id="fab">＋</button>
 </div>
 
@@ -496,6 +514,28 @@
   </div>
 </div>
 
+<!-- ===== Drafts sheet ===== -->
+<div class="sheet-backdrop" id="draftsBackdrop">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2>下書き</h2>
+      <button class="close" data-close="draftsBackdrop">×</button>
+    </div>
+    <div class="sheet-body" id="draftsBody"></div>
+  </div>
+</div>
+
+<!-- ===== Gacha sheet (シェフの気まぐれ) ===== -->
+<div class="sheet-backdrop" id="gachaBackdrop">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2>🎲 シェフの気まぐれ</h2>
+      <button class="close" data-close="gachaBackdrop">×</button>
+    </div>
+    <div class="sheet-body" id="gachaBody"></div>
+  </div>
+</div>
+
 <!-- ===== Photo lightbox ===== -->
 <div class="lightbox" id="lightbox">
   <button class="lightbox-close" id="lightboxClose">×</button>
@@ -516,15 +556,19 @@
 const KEY_LS = 'gochimap.apikey';
 const DB_NAME = 'gochimap';
 const STORE = 'records';
+const DRAFTS_STORE = 'drafts';
 let db = null;
 
 function openDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(DB_NAME, 2);
     req.onupgradeneeded = () => {
       const d = req.result;
       if (!d.objectStoreNames.contains(STORE)) {
         d.createObjectStore(STORE, { keyPath: 'id' });
+      }
+      if (!d.objectStoreNames.contains(DRAFTS_STORE)) {
+        d.createObjectStore(DRAFTS_STORE, { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -540,6 +584,17 @@ function dbPut(rec) {
 }
 function dbDelete(id) {
   return new Promise((res, rej) => { const r = tx('readwrite').delete(id); r.onsuccess = () => res(); r.onerror = () => rej(r.error); });
+}
+
+function draftsTx(mode) { return db.transaction(DRAFTS_STORE, mode).objectStore(DRAFTS_STORE); }
+function draftGetAll() {
+  return new Promise((res, rej) => { const r = draftsTx('readonly').getAll(); r.onsuccess = () => res(r.result || []); r.onerror = () => rej(r.error); });
+}
+function draftPut(rec) {
+  return new Promise((res, rej) => { const r = draftsTx('readwrite').put(rec); r.onsuccess = () => res(); r.onerror = () => rej(r.error); });
+}
+function draftDelete(id) {
+  return new Promise((res, rej) => { const r = draftsTx('readwrite').delete(id); r.onsuccess = () => res(); r.onerror = () => rej(r.error); });
 }
 
 /* ============================================================
@@ -689,6 +744,7 @@ async function connectBoard(code) {
   boardUnsub = fs.onSnapshot(colRef, (snap) => {
     records = snap.docs.map(d => Object.assign({ photos: [], photoUrls: [] }, d.data(), { id: d.id }));
     renderFilters(); renderList(); renderMarkers();
+    if (heatmapVisible) refreshHeatmapData();
     // keep an open store sheet in sync with realtime updates
     if (currentStoreKey && document.getElementById('detailBackdrop').classList.contains('open')) {
       openStore(currentStoreKey);
@@ -814,6 +870,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     history.replaceState(null, '', location.pathname);
   }
   db = await openDB();
+  refreshDraftsUI();
   const key = localStorage.getItem(KEY_LS);
   if (key) { startApp(key); }
   document.getElementById('saveKeyBtn').addEventListener('click', () => {
@@ -887,6 +944,7 @@ async function fillPlaceIntoEditState(placeId) {
     editState.lng = place.location.lng();
     editState.placeId = place.id || '';
     editState.googleRating = place.rating || null;
+    editOpenSnapshot = editFormSnapshotString(); // re-baseline: auto-filled from the tapped map POI, not a user edit yet
     toast('お店の情報を取得しました');
   } catch (e) {
     console.error('place fetch failed', e);
@@ -1099,6 +1157,35 @@ function renderStats() {
 }
 function openStats() { renderStats(); openSheet('statsBackdrop'); }
 
+// Randomly suggest one store from the wishlist ("行きたいリスト").
+function pickGachaStore() {
+  const wantRecs = records.filter(r => r.status === 'want');
+  if (!wantRecs.length) return null;
+  const byKey = new Map();
+  wantRecs.forEach(r => { const k = storeKey(r); if (!byKey.has(k)) byKey.set(k, r); });
+  const list = [...byKey.values()];
+  return list[Math.floor(Math.random() * list.length)];
+}
+function renderGacha(rec) {
+  const body = document.getElementById('gachaBody');
+  body.innerHTML = `
+    <div class="detail-title">${escapeHtml(rec.name)}</div>
+    <div class="detail-addr">${escapeHtml(rec.address || '')}</div>
+    <div class="save-bar" style="margin-top:16px; display:flex; gap:8px;">
+      <button class="chip" id="gachaReroll" type="button">🎲 もう一度</button>
+      <button class="btn-save" id="gachaView" style="flex:1">この店を見る</button>
+    </div>
+  `;
+  document.getElementById('gachaReroll').onclick = () => openGacha();
+  document.getElementById('gachaView').onclick = () => { closeSheet('gachaBackdrop'); openStore(storeKey(rec)); };
+}
+function openGacha() {
+  const pick = pickGachaStore();
+  if (!pick) { toast('行きたいリストが空です'); return; }
+  renderGacha(pick);
+  openSheet('gachaBackdrop');
+}
+
 let markerRegistry = new Map(); // group key -> PinElement instance (for hover sync)
 
 function highlightPin(key, on) {
@@ -1144,6 +1231,41 @@ function renderMarkers() {
   });
   if (groups.length === 1) { map.setCenter({ lat: groups[0].lat, lng: groups[0].lng }); map.setZoom(15); }
   else if (groups.length > 1) { map.fitBounds(bounds, 60); }
+}
+
+/* ============================================================
+   Heatmap (post density overlay, toggled from the header)
+   ============================================================ */
+let heatmapLayer = null;
+let heatmapVisible = false;
+
+function heatmapPoints() {
+  return records
+    .filter(r => r.status !== 'want' && typeof r.lat === 'number' && typeof r.lng === 'number')
+    .map(r => new google.maps.LatLng(r.lat, r.lng));
+}
+function refreshHeatmapData() {
+  if (heatmapLayer) heatmapLayer.setData(heatmapPoints());
+}
+async function toggleHeatmap() {
+  if (!map) return;
+  const btn = document.getElementById('heatmapBtn');
+  if (heatmapVisible) {
+    if (heatmapLayer) heatmapLayer.setMap(null);
+    heatmapVisible = false;
+    btn.classList.remove('armed');
+    return;
+  }
+  try {
+    const { HeatmapLayer } = await google.maps.importLibrary('visualization');
+    if (!heatmapLayer) heatmapLayer = new HeatmapLayer({ map, data: heatmapPoints() });
+    else { heatmapLayer.setData(heatmapPoints()); heatmapLayer.setMap(map); }
+    heatmapVisible = true;
+    btn.classList.add('armed');
+  } catch (e) {
+    console.error('heatmap load failed', e);
+    toast('ヒートマップを読み込めませんでした');
+  }
 }
 
 /* ============================================================
@@ -1327,10 +1449,15 @@ function setStatus(status) {
   document.getElementById('boardPhotoHint').style.display = (isWant || !inBoardMode()) ? 'none' : 'block';
 }
 
+let editIsNew = false;
+let editOpenSnapshot = null; // form state right after opening, to detect unsaved changes on close
+let editDraftId = null; // set when the open sheet was resumed from a saved draft
+
 function openEdit(id, latlng) {
   const isNew = !id;
+  let state;
   if (isNew) {
-    editState = {
+    state = {
       id: 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
       name: '', address: '', lat: latlng ? latlng.lat : null, lng: latlng ? latlng.lng : null,
       placeId: '', googleRating: null, myRating: 0, memo: '', review: '', status: 'visited',
@@ -1338,12 +1465,19 @@ function openEdit(id, latlng) {
     };
   } else {
     const src = records.find(r => r.id === id);
-    editState = JSON.parse(JSON.stringify(src));
+    state = JSON.parse(JSON.stringify(src));
     // photos are blobs; deep clone above drops them — restore refs
-    editState.photos = (src.photos || []).slice();
+    state.photos = (src.photos || []).slice();
     // photoUrls are plain strings (uploaded shared-board photos) — safe from the clone
-    editState.photoUrls = (src.photoUrls || []).slice();
+    state.photoUrls = (src.photoUrls || []).slice();
   }
+  editDraftId = null;
+  populateEditForm(state, isNew);
+}
+
+function populateEditForm(state, isNew) {
+  editState = state;
+  editIsNew = isNew;
   document.getElementById('editTitle').textContent = isNew ? 'お店を追加' : '投稿を編集';
   document.getElementById('fName').value = editState.name || '';
   document.getElementById('fAddr').value = editState.address || '';
@@ -1356,6 +1490,112 @@ function openEdit(id, latlng) {
   document.getElementById('deleteRecordBtn').style.display = isNew ? 'none' : 'block';
   ensureAutocomplete();
   openSheet('editBackdrop');
+  editOpenSnapshot = editFormSnapshotString();
+}
+
+function editFormSnapshotString() {
+  return JSON.stringify({
+    name: document.getElementById('fName').value.trim(),
+    address: document.getElementById('fAddr').value.trim(),
+    visitedDate: document.getElementById('fDate').value,
+    tags: document.getElementById('fTags').value.trim(),
+    review: document.getElementById('fReview').value.trim(),
+    myRating: selectedRating,
+    status: editState.status,
+    photoCount: (editState.photos || []).length,
+    photoUrlCount: (editState.photoUrls || []).length,
+  });
+}
+function isEditDirty() {
+  return editOpenSnapshot !== null && editFormSnapshotString() !== editOpenSnapshot;
+}
+
+function attemptCloseEdit() {
+  if (!isEditDirty()) { closeSheet('editBackdrop'); return; }
+  const save = confirm('編集中の内容を下書きとして保存しますか？\n「キャンセル」を選ぶと編集内容は破棄されます。');
+  if (save) {
+    saveDraftAndClose();
+  } else {
+    if (editDraftId) { const id = editDraftId; draftDelete(id).then(refreshDraftsUI); }
+    closeSheet('editBackdrop');
+  }
+}
+
+async function saveDraftAndClose() {
+  const tags = document.getElementById('fTags').value.split(/[、,，]/).map(t => t.trim()).filter(Boolean);
+  const draft = Object.assign({}, editState, {
+    id: editDraftId || ('draft_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)),
+    targetId: editState.id,
+    isNew: editIsNew,
+    name: document.getElementById('fName').value.trim(),
+    address: document.getElementById('fAddr').value.trim(),
+    visitedDate: document.getElementById('fDate').value,
+    tags,
+    review: document.getElementById('fReview').value.trim(),
+    myRating: selectedRating,
+    savedAt: Date.now(),
+  });
+  try {
+    await draftPut(draft);
+    await refreshDraftsUI();
+    toast('下書きを保存しました');
+  } catch (e) {
+    console.error('draft save failed', e);
+    toast('下書きの保存に失敗しました');
+  }
+  closeSheet('editBackdrop');
+}
+
+async function refreshDraftsUI() {
+  const drafts = await draftGetAll();
+  const btn = document.getElementById('draftsBtn');
+  const countEl = document.getElementById('draftsCount');
+  countEl.textContent = drafts.length;
+  btn.style.display = drafts.length > 0 ? 'flex' : 'none';
+}
+
+async function renderDraftsList() {
+  const body = document.getElementById('draftsBody');
+  const drafts = (await draftGetAll()).sort((a, b) => b.savedAt - a.savedAt);
+  if (!drafts.length) {
+    body.innerHTML = '<p class="sub">下書きはありません</p>';
+    return;
+  }
+  body.innerHTML = drafts.map(d => `
+    <div class="draft-item">
+      <div class="draft-info">
+        <div class="draft-name">${escapeHtml(d.name || '(店名未入力)')}</div>
+        <div class="draft-meta">${new Date(d.savedAt).toLocaleString('ja-JP')}</div>
+      </div>
+      <div class="draft-actions">
+        <button class="chip" data-resume="${d.id}" type="button">編集を再開</button>
+        <button class="chip danger" data-del-draft="${d.id}" type="button">削除</button>
+      </div>
+    </div>
+  `).join('');
+  drafts.forEach(d => {
+    body.querySelector(`[data-resume="${d.id}"]`).onclick = () => resumeDraft(d);
+    body.querySelector(`[data-del-draft="${d.id}"]`).onclick = async () => {
+      await draftDelete(d.id);
+      await refreshDraftsUI();
+      renderDraftsList();
+    };
+  });
+}
+function openDrafts() { renderDraftsList(); openSheet('draftsBackdrop'); }
+
+function resumeDraft(d) {
+  closeSheet('draftsBackdrop');
+  const state = {
+    id: d.targetId, name: d.name, address: d.address, lat: d.lat, lng: d.lng,
+    placeId: d.placeId, googleRating: d.googleRating, myRating: d.myRating,
+    memo: d.memo || '', review: d.review, status: d.status,
+    tags: (d.tags || []).slice(),
+    visitedDate: d.visitedDate, photos: (d.photos || []).slice(), photoUrls: (d.photoUrls || []).slice(),
+    createdAt: d.createdAt, updatedAt: Date.now(), author: d.author, likes: d.likes || [],
+  };
+  editDraftId = d.id;
+  populateEditForm(state, d.isNew);
 }
 
 function renderPhotoGrid() {
@@ -1462,6 +1702,7 @@ async function saveRecord() {
     await dbPut(editState);
     records = await dbGetAll();
   }
+  if (editDraftId) { const id = editDraftId; editDraftId = null; await draftDelete(id); await refreshDraftsUI(); }
   closeSheet('editBackdrop');
   renderFilters(); renderList(); renderMarkers();
   toast('保存しました 🍜');
@@ -1627,6 +1868,7 @@ function openNewVisit(id) {
   document.getElementById('fAddr').value = base.address || '';
   document.getElementById('editTitle').textContent = '新しく投稿する';
   if (map && base.lat != null) { map.setCenter({ lat: base.lat, lng: base.lng }); }
+  editOpenSnapshot = editFormSnapshotString(); // re-baseline: the auto-filled name/address isn't a user edit yet
 }
 
 /* ============================================================
@@ -1708,9 +1950,14 @@ function wireStaticHandlers() {
   document.getElementById('fab').onclick = () => openEdit(null, null);
   document.getElementById('saveRecordBtn').onclick = saveRecord;
   document.getElementById('deleteRecordBtn').onclick = deleteRecord;
-  document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => closeSheet(b.dataset.close));
+  document.querySelectorAll('[data-close]').forEach(b => {
+    b.onclick = () => (b.dataset.close === 'editBackdrop' ? attemptCloseEdit() : closeSheet(b.dataset.close));
+  });
   document.querySelectorAll('.sheet-backdrop').forEach(bd => {
-    bd.addEventListener('click', (e) => { if (e.target === bd) closeSheet(bd.id); });
+    bd.addEventListener('click', (e) => {
+      if (e.target !== bd) return;
+      if (bd.id === 'editBackdrop') attemptCloseEdit(); else closeSheet(bd.id);
+    });
   });
   document.querySelectorAll('#starInput span').forEach(s => {
     s.onclick = () => setRating(Number(s.dataset.v));
@@ -1743,6 +1990,9 @@ function wireStaticHandlers() {
   document.getElementById('importFile').onchange = (e) => { if (e.target.files[0]) importData(e.target.files[0]); e.target.value = ''; };
   document.getElementById('settingsBtn').onclick = openShareSheet;
   document.getElementById('myLocationBtn').onclick = goToMyLocation;
+  document.getElementById('heatmapBtn').onclick = toggleHeatmap;
+  document.getElementById('gachaBtn').onclick = openGacha;
+  document.getElementById('draftsBtn').onclick = openDrafts;
   document.getElementById('statsBtn').onclick = openStats;
   document.getElementById('sortSelect').onchange = (e) => {
     sortMode = e.target.value;
