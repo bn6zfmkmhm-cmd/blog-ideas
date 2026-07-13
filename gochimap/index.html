@@ -1264,7 +1264,7 @@ async function toggleHeatmap() {
     btn.classList.add('armed');
   } catch (e) {
     console.error('heatmap load failed', e);
-    toast('ヒートマップを読み込めませんでした');
+    toast('ヒートマップを読み込めませんでした（' + (e && e.message ? e.message : e) + '）');
   }
 }
 
@@ -1954,10 +1954,9 @@ function wireStaticHandlers() {
     b.onclick = () => (b.dataset.close === 'editBackdrop' ? attemptCloseEdit() : closeSheet(b.dataset.close));
   });
   document.querySelectorAll('.sheet-backdrop').forEach(bd => {
-    bd.addEventListener('click', (e) => {
-      if (e.target !== bd) return;
-      if (bd.id === 'editBackdrop') attemptCloseEdit(); else closeSheet(bd.id);
-    });
+    // the draft-save confirmation is only asked via the × button (data-close above),
+    // not when tapping the backdrop — tapping outside just closes without prompting.
+    bd.addEventListener('click', (e) => { if (e.target === bd) closeSheet(bd.id); });
   });
   document.querySelectorAll('#starInput span').forEach(s => {
     s.onclick = () => setRating(Number(s.dataset.v));
