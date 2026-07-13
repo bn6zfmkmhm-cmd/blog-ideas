@@ -938,11 +938,27 @@ function renderStats() {
   });
   const ranking = [...byAuthor.entries()].sort((a, b) => b[1] - a[1]);
 
+  const byStore = new Map();
+  records.forEach(r => {
+    if (r.status === 'want') return;
+    const k = storeKey(r);
+    if (!byStore.has(k)) byStore.set(k, { name: r.name || '(不明な店)', total: 0, count: 0 });
+    const s = byStore.get(k);
+    s.total += (r.myRating || 0);
+    s.count += 1;
+  });
+  const storeRanking = [...byStore.values()]
+    .map(s => ({ name: s.name, avg: s.total / s.count, count: s.count }))
+    .sort((a, b) => b.avg - a.avg || b.count - a.count)
+    .slice(0, 10);
+
   body.innerHTML = `
     <div class="stat-row"><div class="stat-num">${total}</div><div class="stat-label">全体の投稿数</div></div>
     <div class="stat-row"><div class="stat-num">${thisMonth}</div><div class="stat-label">今月の投稿数</div></div>
     <h3 style="margin-top:20px;">投稿者ランキング</h3>
     <div class="rank-list">${ranking.map(([name, count], i) => `<div class="rank-item"><span class="rank-no">${i + 1}</span><span class="rank-name">${escapeHtml(name)}</span><span class="rank-count">${count}件</span></div>`).join('') || '<div class="stat-label">まだ投稿がありません</div>'}</div>
+    <h3 style="margin-top:20px;">高評価の店ランキング</h3>
+    <div class="rank-list">${storeRanking.map((s, i) => `<div class="rank-item"><span class="rank-no">${i + 1}</span><span class="rank-name">${escapeHtml(s.name)}</span><span class="rank-count">★${s.avg.toFixed(1)}（${s.count}件）</span></div>`).join('') || '<div class="stat-label">まだ評価がありません</div>'}</div>
   `;
 }
 function openStats() { renderStats(); openSheet('statsBackdrop'); }
