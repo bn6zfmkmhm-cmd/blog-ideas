@@ -963,10 +963,13 @@ function goToMyLocation() {
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       myLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      // re-sort/re-render first: renderMarkers() re-centers the map when there's
+      // only one visible store, so it must run before we center on myLocation below,
+      // not after — otherwise it would immediately override the current-location center.
+      if (sortMode === 'near') { renderList(); renderMarkers(); }
       if (map) { map.setCenter(myLocation); map.setZoom(15); }
       renderMyLocationMarker();
       toast('現在地に移動しました');
-      if (sortMode === 'near') { renderList(); renderMarkers(); }
     },
     (err) => {
       console.error('geolocation failed', err);
