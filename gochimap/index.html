@@ -97,8 +97,8 @@
 
   /* mobile: touching the map temporarily grows it, shrinking the list below */
   @media (max-width: 899px) {
-    #mainArea.map-expanded #mapWrap { flex-basis: 78%; }
-    #mainArea.map-expanded #list { flex-basis: 10%; }
+    #mainArea.map-expanded #mapWrap { flex-basis: 85%; }
+    #mainArea.map-expanded #list { flex-basis: 8%; }
   }
 
   /* on wider (PC-sized) screens, show map and list side by side instead of stacked */
@@ -1544,15 +1544,12 @@ function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c
 function wireStaticHandlers() {
   const mainArea = document.getElementById('mainArea');
   const mapWrapEl = document.getElementById('mapWrap');
-  let mapCollapseTimer = null;
-  const expandMap = () => { clearTimeout(mapCollapseTimer); mainArea.classList.add('map-expanded'); };
-  const scheduleCollapseMap = () => {
-    clearTimeout(mapCollapseTimer);
-    mapCollapseTimer = setTimeout(() => mainArea.classList.remove('map-expanded'), 900);
-  };
-  mapWrapEl.addEventListener('touchstart', expandMap, { passive: true });
-  mapWrapEl.addEventListener('touchend', scheduleCollapseMap, { passive: true });
-  mapWrapEl.addEventListener('touchcancel', scheduleCollapseMap, { passive: true });
+  mapWrapEl.addEventListener('touchstart', () => mainArea.classList.add('map-expanded'), { passive: true });
+  document.addEventListener('touchstart', (e) => {
+    if (mainArea.classList.contains('map-expanded') && !mapWrapEl.contains(e.target)) {
+      mainArea.classList.remove('map-expanded');
+    }
+  }, { passive: true });
 
   document.getElementById('fab').onclick = () => openEdit(null, null);
   document.getElementById('saveRecordBtn').onclick = saveRecord;
