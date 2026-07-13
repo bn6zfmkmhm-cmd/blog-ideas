@@ -271,8 +271,6 @@
   /* store detail (grouped posts) */
   .count-badge { font-size: 11px; font-weight: 700; color: var(--accent2); background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; vertical-align: middle; white-space: nowrap; }
   .want-badge { font-size: 12px; font-weight: 700; color: #8a5cf0; }
-  .stat-row { display: flex; align-items: baseline; gap: 8px; padding: 10px 4px; border-bottom: 1px solid var(--border); }
-  .stat-num { font-size: 24px; font-weight: 800; color: var(--accent2); min-width: 48px; }
   .stat-label { font-size: 14px; color: var(--muted); }
   .rank-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
   .rank-item { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--border); }
@@ -926,10 +924,6 @@ function goToMyLocation() {
 
 function renderStats() {
   const body = document.getElementById('statsBody');
-  const total = records.length;
-  const now = new Date();
-  const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-  const thisMonth = records.filter(r => (r.visitedDate || '').startsWith(ym)).length;
 
   const byAuthor = new Map();
   records.forEach(r => {
@@ -953,9 +947,7 @@ function renderStats() {
     .slice(0, 10);
 
   body.innerHTML = `
-    <div class="stat-row"><div class="stat-num">${total}</div><div class="stat-label">全体の投稿数</div></div>
-    <div class="stat-row"><div class="stat-num">${thisMonth}</div><div class="stat-label">今月の投稿数</div></div>
-    <h3 style="margin-top:20px;">投稿者ランキング</h3>
+    <h3>投稿者ランキング</h3>
     <div class="rank-list">${ranking.map(([name, count], i) => `<div class="rank-item"><span class="rank-no">${i + 1}</span><span class="rank-name">${escapeHtml(name)}</span><span class="rank-count">${count}件</span></div>`).join('') || '<div class="stat-label">まだ投稿がありません</div>'}</div>
     <h3 style="margin-top:20px;">高評価の店ランキング</h3>
     <div class="rank-list">${storeRanking.map((s, i) => `<div class="rank-item"><span class="rank-no">${i + 1}</span><span class="rank-name">${escapeHtml(s.name)}</span><span class="rank-count">★${s.avg.toFixed(1)}（${s.count}件）</span></div>`).join('') || '<div class="stat-label">まだ評価がありません</div>'}</div>
