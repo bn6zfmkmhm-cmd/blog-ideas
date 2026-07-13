@@ -744,7 +744,7 @@ async function connectBoard(code) {
   boardUnsub = fs.onSnapshot(colRef, (snap) => {
     records = snap.docs.map(d => Object.assign({ photos: [], photoUrls: [] }, d.data(), { id: d.id }));
     renderFilters(); renderList(); renderMarkers();
-    if (heatmapVisible) refreshHeatmapData();
+    if (heatmapVisible) refreshHeatmapCircles();
     // keep an open store sheet in sync with realtime updates
     if (currentStoreKey && document.getElementById('detailBackdrop').classList.contains('open')) {
       openStore(currentStoreKey);
@@ -1236,36 +1236,39 @@ function renderMarkers() {
 /* ============================================================
    Heatmap (post density overlay, toggled from the header)
    ============================================================ */
-let heatmapLayer = null;
+// Google discontinued the visualization library's HeatmapLayer (removed in Maps
+// JavaScript API v3.65), so density is approximated with overlapping translucent
+// circles instead: areas with more posts get visibly darker from the overlap.
+let heatmapCircles = [];
 let heatmapVisible = false;
 
-function heatmapPoints() {
-  return records
+function refreshHeatmapCircles() {
+  heatmapCircles.forEach(c => c.setMap(null));
+  heatmapCircles = records
     .filter(r => r.status !== 'want' && typeof r.lat === 'number' && typeof r.lng === 'number')
-    .map(r => new google.maps.LatLng(r.lat, r.lng));
+    .map(r => new google.maps.Circle({
+      strokeWeight: 0,
+      fillColor: '#ff5722',
+      fillOpacity: 0.15,
+      map,
+      center: { lat: r.lat, lng: r.lng },
+      radius: 400,
+      clickable: false,
+    }));
 }
-function refreshHeatmapData() {
-  if (heatmapLayer) heatmapLayer.setData(heatmapPoints());
-}
-async function toggleHeatmap() {
+function toggleHeatmap() {
   if (!map) return;
   const btn = document.getElementById('heatmapBtn');
   if (heatmapVisible) {
-    if (heatmapLayer) heatmapLayer.setMap(null);
+    heatmapCircles.forEach(c => c.setMap(null));
+    heatmapCircles = [];
     heatmapVisible = false;
     btn.classList.remove('armed');
     return;
   }
-  try {
-    const { HeatmapLayer } = await google.maps.importLibrary('visualization');
-    if (!heatmapLayer) heatmapLayer = new HeatmapLayer({ map, data: heatmapPoints() });
-    else { heatmapLayer.setData(heatmapPoints()); heatmapLayer.setMap(map); }
-    heatmapVisible = true;
-    btn.classList.add('armed');
-  } catch (e) {
-    console.error('heatmap load failed', e);
-    toast('ヒートマップを読み込めませんでした（' + (e && e.message ? e.message : e) + '）');
-  }
+  refreshHeatmapCircles();
+  heatmapVisible = true;
+  btn.classList.add('armed');
 }
 
 /* ============================================================
@@ -1954,8 +1957,7 @@ function wireStaticHandlers() {
     b.onclick = () => (b.dataset.close === 'editBackdrop' ? attemptCloseEdit() : closeSheet(b.dataset.close));
   });
   document.querySelectorAll('.sheet-backdrop').forEach(bd => {
-    // the draft-save confirmation is only asked via the × button (data-close above),
-    // not when tapping the backdrop — tapping outside just closes without prompting.
+    if (bd.id === 'editBackdrop') return; // the post sheet only closes via its own buttons, never by tapping outside
     bd.addEventListener('click', (e) => { if (e.target === bd) closeSheet(bd.id); });
   });
   document.querySelectorAll('#starInput span').forEach(s => {
