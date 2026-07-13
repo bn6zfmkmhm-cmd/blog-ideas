@@ -167,6 +167,7 @@
   .card .memo { font-size: 13px; color: var(--text); opacity: .85; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.5; }
   .card .tagline { margin-top: 6px; display: flex; gap: 5px; flex-wrap: wrap; }
   .minitag { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--surface2); color: var(--accent2); border: 1px solid var(--border); }
+  .minitag.pioneer-badge { color: #ff8a3d; border-color: #ff8a3d; font-weight: 700; }
   .stars { color: var(--gold); letter-spacing: 1px; font-size: 13px; }
   .stars .off { color: var(--border); }
   .stars .star-partial { position: relative; display: inline-block; color: var(--border); }
@@ -281,6 +282,20 @@
   .rank-no { font-weight: 800; color: var(--accent2); min-width: 20px; }
   .rank-name { flex: 1; font-weight: 600; }
   .rank-count { color: var(--muted); font-size: 13px; }
+  .level-card { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--border); border-radius: 14px; margin-bottom: 18px; background: var(--surface2); }
+  .level-icon { font-size: 32px; }
+  .level-name { font-weight: 800; font-size: 16px; }
+  .level-progress-bar { height: 6px; background: var(--border); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+  .level-progress-fill { height: 100%; background: var(--accent); }
+  .level-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .badge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 10px; margin: 8px 0 20px; }
+  .badge-item { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 6px; border-radius: 12px; border: 1px solid var(--border); text-align: center; }
+  .badge-item.locked { opacity: .35; }
+  .badge-icon { font-size: 22px; }
+  .badge-name { font-size: 11px; font-weight: 700; }
+  .challenge-card { padding: 14px; border: 1px solid var(--border); border-radius: 14px; margin-bottom: 20px; background: var(--surface2); }
+  .challenge-text { font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+  .challenge-progress { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .card .meta .avg-num { font-size: 12px; color: var(--accent2); font-weight: 700; }
   .posts { display: flex; flex-direction: column; gap: 14px; margin-top: 4px; }
   .post { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: var(--surface); }
@@ -915,8 +930,95 @@ function goToMyLocation() {
   );
 }
 
+const LEVELS = [
+  { min: 0, name: '見習いグルメ', icon: '🌱' },
+  { min: 3, name: 'グルメ通', icon: '🍽️' },
+  { min: 8, name: 'グルメマスター', icon: '🎖️' },
+  { min: 16, name: 'グルメ伝説', icon: '👑' },
+  { min: 30, name: 'グルメの神', icon: '✨' },
+];
+function levelIndexForCount(count) {
+  let idx = 0;
+  for (let i = 0; i < LEVELS.length; i++) if (count >= LEVELS[i].min) idx = i;
+  return idx;
+}
+
+function pioneerCount(myRecs) {
+  const earliestByStore = new Map();
+  records.forEach(r => {
+    const k = storeKey(r);
+    const cur = earliestByStore.get(k);
+    if (!cur || r.createdAt < cur.createdAt) earliestByStore.set(k, r);
+  });
+  const mySet = new Set(myRecs.map(r => r.id));
+  return [...earliestByStore.values()].filter(r => mySet.has(r.id)).length;
+}
+
+const BADGE_DEFS = [
+  { icon: '🏅', name: 'はじめの一歩', check: (m, pc) => m.length >= 1 },
+  { icon: '🍜', name: '開拓者', check: (m, pc) => new Set(m.map(storeKey)).size >= 5 },
+  { icon: '⭐', name: '目利き', check: (m, pc) => m.filter(r => r.myRating === 5).length >= 3 },
+  { icon: '📸', name: 'カメラマン', check: (m, pc) => m.filter(r => photoSrcs(r).length > 0).length >= 5 },
+  { icon: '🔖', name: '夢見る人', check: (m, pc) => m.filter(r => r.status === 'want').length >= 5 },
+  { icon: '🚩', name: '発見者', check: (m, pc) => pc >= 3 },
+];
+
+const CHALLENGE_DEFS = [
+  { text: '今月は3軒投稿しよう', target: 3, check: m => m.length },
+  { text: '今月は★4以上の投稿を2件しよう', target: 2, check: m => m.filter(r => (r.myRating || 0) >= 4).length },
+  { text: '今月は写真付き投稿を2件しよう', target: 2, check: m => m.filter(r => photoSrcs(r).length > 0).length },
+  { text: '今月はタグ付き投稿を3件しよう', target: 3, check: m => m.filter(r => (r.tags || []).length > 0).length },
+];
+function currentChallenge() {
+  const now = new Date();
+  return CHALLENGE_DEFS[(now.getFullYear() * 12 + now.getMonth()) % CHALLENGE_DEFS.length];
+}
+
+function thisMonthOf(recs) {
+  const now = new Date();
+  const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  return recs.filter(r => (r.visitedDate || '').startsWith(ym));
+}
+
 function renderStats() {
   const body = document.getElementById('statsBody');
+
+  const myRecs = records.filter(r => r.author === myNickname);
+  const pc = pioneerCount(myRecs);
+  const levelIdx = levelIndexForCount(myRecs.length);
+  const level = LEVELS[levelIdx];
+  const next = LEVELS[levelIdx + 1];
+  const progressPct = next ? Math.min(100, Math.round((myRecs.length - level.min) / (next.min - level.min) * 100)) : 100;
+  const levelHtml = `
+    <div class="level-card">
+      <div class="level-icon">${level.icon}</div>
+      <div style="flex:1">
+        <div class="level-name">${escapeHtml(level.name)}</div>
+        <div class="level-progress-bar"><div class="level-progress-fill" style="width:${progressPct}%"></div></div>
+        <div class="level-sub">${next ? `投稿数 ${myRecs.length} ・ 次のレベルまであと${next.min - myRecs.length}件` : `投稿数 ${myRecs.length}（最高レベル！）`}</div>
+      </div>
+    </div>
+  `;
+
+  const badgeHtml = `
+    <h3>実績バッジ</h3>
+    <div class="badge-grid">${BADGE_DEFS.map(b => {
+      const unlocked = b.check(myRecs, pc);
+      return `<div class="badge-item${unlocked ? '' : ' locked'}"><div class="badge-icon">${b.icon}</div><div class="badge-name">${escapeHtml(b.name)}</div></div>`;
+    }).join('')}</div>
+  `;
+
+  const challenge = currentChallenge();
+  const progress = Math.min(challenge.target, challenge.check(thisMonthOf(myRecs)));
+  const done = progress >= challenge.target;
+  const challengeHtml = `
+    <h3>今月のお題</h3>
+    <div class="challenge-card">
+      <div class="challenge-text">${done ? '✅' : '🎯'} ${escapeHtml(challenge.text)}</div>
+      <div class="level-progress-bar"><div class="level-progress-fill" style="width:${Math.round(progress / challenge.target * 100)}%"></div></div>
+      <div class="challenge-progress">${progress} / ${challenge.target}${done ? '　達成！' : ''}</div>
+    </div>
+  `;
 
   const byAuthor = new Map();
   records.forEach(r => {
@@ -939,7 +1041,7 @@ function renderStats() {
     .sort((a, b) => b.avg - a.avg || b.count - a.count)
     .slice(0, 10);
 
-  body.innerHTML = `
+  body.innerHTML = levelHtml + badgeHtml + challengeHtml + `
     <h3>投稿者ランキング</h3>
     <div class="rank-list">${ranking.map(([name, count], i) => `<div class="rank-item"><span class="rank-no">${i + 1}</span><span class="rank-name">${escapeHtml(name)}</span><span class="rank-count">${count}件</span></div>`).join('') || '<div class="stat-label">まだ投稿がありません</div>'}</div>
     <h3 style="margin-top:20px;">高評価の店ランキング</h3>
@@ -1350,13 +1452,14 @@ async function deleteRecord() {
    Detail sheet
    ============================================================ */
 // One post (single visit record) inside the store view.
-function storePostHtml(r) {
+function storePostHtml(r, isPioneer) {
   const srcs = photoSrcs(r);
   const photos = srcs.length
     ? `<div class="detail-photos">${srcs.map((s, i) => `<img src="${s}" class="zoomable-photo" data-post="${r.id}" data-idx="${i}">`).join('')}</div>`
     : '';
   const tags = (r.tags || []).map(t => `<span class="minitag">#${escapeHtml(t)}</span>`).join(' ');
   const trip = r.trip ? `<span class="minitag">🧳 ${escapeHtml(r.trip)}</span>` : '';
+  const pioneerBadge = isPioneer ? `<span class="minitag pioneer-badge">🚩 開拓者</span>` : '';
   const author = r.author ? ` ・ 🙋 ${escapeHtml(r.author)}` : '';
   const ratingOrWant = r.status === 'want'
     ? `<span class="want-badge">🔖 行きたい</span>`
@@ -1369,7 +1472,7 @@ function storePostHtml(r) {
       <span class="post-date">${r.visitedDate || ''}${author}</span>
     </div>
     ${photos}
-    ${(trip || tags) ? `<div class="tagline" style="margin:8px 0 2px">${trip} ${tags}</div>` : ''}
+    ${(pioneerBadge || trip || tags) ? `<div class="tagline" style="margin:8px 0 2px">${pioneerBadge}${trip} ${tags}</div>` : ''}
     ${r.memo ? `<div class="detail-meta" style="margin-top:8px">${escapeHtml(r.memo)}</div>` : ''}
     ${r.review ? `<div class="detail-review" style="margin-top:8px">${escapeHtml(r.review)}</div>` : ''}
     <div class="post-actions">
@@ -1390,13 +1493,14 @@ function openStore(key) {
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(g.name)}&query_place_id=${g.placeId}`
     : `https://www.google.com/maps/search/?api=1&query=${g.lat},${g.lng}`;
   const countLine = g.recs.length > 1 ? ` ・ ${g.recs.length}件の投稿` : '';
+  const pioneerRec = g.recs.reduce((a, b) => (a.createdAt < b.createdAt ? a : b));
   body.innerHTML = `
     <div class="detail-title">${escapeHtml(g.name)}</div>
     <div class="detail-addr">${escapeHtml(g.address || '')}${countLine}</div>
     ${g.googleRating ? `<div class="detail-meta" style="margin-bottom:10px">Googleの評価: ★ ${g.googleRating.toFixed(1)}</div>` : ''}
     <a class="gmaps-link" href="${mapsUrl}" target="_blank" rel="noopener">📍 Googleマップで開く</a>
     <div class="save-bar" style="margin:16px 0 8px"><button class="btn-save" id="newVisitStore">新しく投稿する</button></div>
-    <div class="posts">${g.recs.map(storePostHtml).join('')}</div>`;
+    <div class="posts">${g.recs.map(r => storePostHtml(r, g.recs.length > 1 && r.id === pioneerRec.id)).join('')}</div>`;
   document.getElementById('newVisitStore').onclick = () => { closeSheet('detailBackdrop'); openNewVisit(g.recs[0].id); };
   g.recs.forEach(r => {
     const eb = body.querySelector(`[data-edit="${r.id}"]`);
