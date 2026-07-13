@@ -242,8 +242,6 @@
     display: flex; align-items: center; justify-content: center;
   }
 
-  .row2 { display: flex; gap: 12px; }
-  .row2 > .field { flex: 1; }
 
   .save-bar { padding: 4px 0 0; }
   .btn-save {
@@ -415,27 +413,16 @@
           <span data-v="1">★</span><span data-v="2">★</span><span data-v="3">★</span><span data-v="4">★</span><span data-v="5">★</span>
         </div>
       </div>
-      <div class="row2">
-        <div class="field">
-          <label>訪問日</label>
-          <input type="date" id="fDate">
-        </div>
-        <div class="field">
-          <label>旅行名（任意）</label>
-          <input type="text" id="fTrip" placeholder="例: 京都旅行" list="tripList">
-          <datalist id="tripList"></datalist>
-        </div>
+      <div class="field">
+        <label>訪問日</label>
+        <input type="date" id="fDate">
       </div>
       <div class="field">
         <label>タグ（「、」区切り）</label>
         <input type="text" id="fTags" placeholder="例: ラーメン、夜、一人">
       </div>
-      <div class="field">
-        <label>一言メモ</label>
-        <input type="text" id="fMemo" placeholder="ぱっと見返す用の短い感想">
-      </div>
       <div class="field" id="reviewField">
-        <label>感想（じっくり）</label>
+        <label>感想</label>
         <textarea id="fReview" placeholder="味・雰囲気・また来たいか など自由に"></textarea>
       </div>
       <div class="field" id="photoField">
@@ -1204,22 +1191,14 @@ function openEdit(id, latlng) {
   document.getElementById('fName').value = editState.name || '';
   document.getElementById('fAddr').value = editState.address || '';
   document.getElementById('fDate').value = editState.visitedDate || todayStr();
-  document.getElementById('fTrip').value = editState.trip || '';
   document.getElementById('fTags').value = (editState.tags || []).join(', ');
-  document.getElementById('fMemo').value = editState.memo || '';
   document.getElementById('fReview').value = editState.review || '';
   setRating(editState.myRating || 0);
   setStatus(editState.status || 'visited');
-  refreshTripList();
   renderPhotoGrid();
   document.getElementById('deleteRecordBtn').style.display = isNew ? 'none' : 'block';
   ensureAutocomplete();
   openSheet('editBackdrop');
-}
-
-function refreshTripList() {
-  const dl = document.getElementById('tripList');
-  dl.innerHTML = allTrips().map(t => `<option value="${escapeHtml(t)}">`).join('');
 }
 
 function renderPhotoGrid() {
@@ -1286,9 +1265,7 @@ async function saveRecord() {
   editState.name = name;
   editState.address = document.getElementById('fAddr').value.trim();
   editState.visitedDate = document.getElementById('fDate').value || todayStr();
-  editState.trip = document.getElementById('fTrip').value.trim();
   editState.tags = document.getElementById('fTags').value.split(/[、,，]/).map(t => t.trim()).filter(Boolean);
-  editState.memo = document.getElementById('fMemo').value.trim();
   editState.review = document.getElementById('fReview').value.trim();
   editState.myRating = selectedRating;
   editState.updatedAt = Date.now();
