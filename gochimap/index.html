@@ -271,6 +271,14 @@
   /* store detail (grouped posts) */
   .count-badge { font-size: 11px; font-weight: 700; color: var(--accent2); background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; vertical-align: middle; white-space: nowrap; }
   .want-badge { font-size: 12px; font-weight: 700; color: #8a5cf0; }
+  .stat-row { display: flex; align-items: baseline; gap: 8px; padding: 10px 4px; border-bottom: 1px solid var(--border); }
+  .stat-num { font-size: 24px; font-weight: 800; color: var(--accent2); min-width: 48px; }
+  .stat-label { font-size: 14px; color: var(--muted); }
+  .rank-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .rank-item { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--border); }
+  .rank-no { font-weight: 800; color: var(--accent2); min-width: 20px; }
+  .rank-name { flex: 1; font-weight: 600; }
+  .rank-count { color: var(--muted); font-size: 13px; }
   .card .meta .avg-num { font-size: 12px; color: var(--accent2); font-weight: 700; }
   .posts { display: flex; flex-direction: column; gap: 14px; margin-top: 4px; }
   .post { border: 1px solid var(--border); border-radius: 14px; padding: 12px; background: var(--surface); }
@@ -281,6 +289,7 @@
   .post-actions { display: flex; gap: 10px; margin-top: 12px; }
   .post-actions button { flex: 1; padding: 9px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 13px; }
   .post-actions button.danger { color: var(--danger); }
+  .post-actions button.like-btn.liked { border-color: var(--accent); color: var(--accent2); }
   .gmaps-link { display: inline-block; margin-top: 6px; color: var(--accent2); font-size: 14px; text-decoration: none; }
 
   .toast {
@@ -344,6 +353,7 @@
     <div class="logo">まえ<span>ログ</span></div>
     <div class="spacer"></div>
     <button class="icon-btn" id="myLocationBtn" title="現在地">📍</button>
+    <button class="icon-btn" id="statsBtn" title="統計">📊</button>
     <button class="icon-btn" id="settingsBtn" title="設定">⚙️</button>
     <button class="icon-btn" id="importBtn" title="読み込み">📥</button>
     <button class="icon-btn" id="exportBtn" title="書き出し">📤</button>
@@ -466,6 +476,17 @@
       <button class="close" data-close="shareBackdrop">×</button>
     </div>
     <div class="sheet-body" id="shareBody"></div>
+  </div>
+</div>
+
+<!-- ===== Stats sheet ===== -->
+<div class="sheet-backdrop" id="statsBackdrop">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2>統計</h2>
+      <button class="close" data-close="statsBackdrop">×</button>
+    </div>
+    <div class="sheet-body" id="statsBody"></div>
   </div>
 </div>
 
@@ -903,6 +924,29 @@ function goToMyLocation() {
   );
 }
 
+function renderStats() {
+  const body = document.getElementById('statsBody');
+  const total = records.length;
+  const now = new Date();
+  const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const thisMonth = records.filter(r => (r.visitedDate || '').startsWith(ym)).length;
+
+  const byAuthor = new Map();
+  records.forEach(r => {
+    const a = r.author || '(不明)';
+    byAuthor.set(a, (byAuthor.get(a) || 0) + 1);
+  });
+  const ranking = [...byAuthor.entries()].sort((a, b) => b[1] - a[1]);
+
+  body.innerHTML = `
+    <div class="stat-row"><div class="stat-num">${total}</div><div class="stat-label">全体の投稿数</div></div>
+    <div class="stat-row"><div class="stat-num">${thisMonth}</div><div class="stat-label">今月の投稿数</div></div>
+    <h3 style="margin-top:20px;">投稿者ランキング</h3>
+    <div class="rank-list">${ranking.map(([name, count], i) => `<div class="rank-item"><span class="rank-no">${i + 1}</span><span class="rank-name">${escapeHtml(name)}</span><span class="rank-count">${count}件</span></div>`).join('') || '<div class="stat-label">まだ投稿がありません</div>'}</div>
+  `;
+}
+function openStats() { renderStats(); openSheet('statsBackdrop'); }
+
 let markerRegistry = new Map(); // group key -> PinElement instance (for hover sync)
 
 function highlightPin(key, on) {
@@ -1326,6 +1370,8 @@ function storePostHtml(r) {
   const ratingOrWant = r.status === 'want'
     ? `<span class="want-badge">🔖 行きたい</span>`
     : `<span class="stars">${starStr(r.myRating)}</span>`;
+  const likeCount = (r.likes || []).length;
+  const iLiked = (r.likes || []).includes(myNickname);
   return `<div class="post">
     <div class="post-head">
       ${ratingOrWant}
@@ -1336,6 +1382,7 @@ function storePostHtml(r) {
     ${r.memo ? `<div class="detail-meta" style="margin-top:8px">${escapeHtml(r.memo)}</div>` : ''}
     ${r.review ? `<div class="detail-review" style="margin-top:8px">${escapeHtml(r.review)}</div>` : ''}
     <div class="post-actions">
+      <button class="like-btn${iLiked ? ' liked' : ''}" data-like="${r.id}">${iLiked ? '❤️' : '🤍'}${likeCount ? ' ' + likeCount : ''}</button>
       <button data-edit="${r.id}">編集</button>
       <button data-del="${r.id}" class="danger">削除</button>
     </div>
@@ -1363,8 +1410,10 @@ function openStore(key) {
   g.recs.forEach(r => {
     const eb = body.querySelector(`[data-edit="${r.id}"]`);
     const db = body.querySelector(`[data-del="${r.id}"]`);
+    const lb = body.querySelector(`[data-like="${r.id}"]`);
     if (eb) eb.onclick = () => { if (!checkAdminAccess(r)) return; closeSheet('detailBackdrop'); openEdit(r.id); };
     if (db) db.onclick = () => { if (!checkAdminAccess(r)) return; deletePostFromStore(r.id, key); };
+    if (lb) lb.onclick = () => toggleLike(r.id, key);
   });
   body.querySelectorAll('.zoomable-photo').forEach(img => {
     img.onclick = () => {
@@ -1401,6 +1450,23 @@ async function deletePostFromStore(id, key) {
   toast('削除しました');
   const g = groupedRecords().find(x => x.key === key);
   if (g) openStore(key); else { closeSheet('detailBackdrop'); currentStoreKey = null; }
+}
+
+// Toggle a lightweight ❤️ like on a post (anyone can like/unlike; no admin gate).
+async function toggleLike(id, key) {
+  const nickname = ensureNickname();
+  if (!nickname) return;
+  const rec = records.find(r => r.id === id);
+  if (!rec) return;
+  const liked = (rec.likes || []).includes(nickname);
+  try {
+    const fs = await getFirestore();
+    const ref = fs.doc(firestoreDb, 'boards', boardCode, 'records', id);
+    await fs.updateDoc(ref, { likes: liked ? fs.arrayRemove(nickname) : fs.arrayUnion(nickname) });
+  } catch (e) {
+    console.error('toggleLike failed', e);
+    toast('いいねの更新に失敗しました');
+  }
 }
 
 // Create a fresh, separate record for the same place (keeps the old record).
@@ -1523,6 +1589,7 @@ function wireStaticHandlers() {
   document.getElementById('importFile').onchange = (e) => { if (e.target.files[0]) importData(e.target.files[0]); e.target.value = ''; };
   document.getElementById('settingsBtn').onclick = openShareSheet;
   document.getElementById('myLocationBtn').onclick = goToMyLocation;
+  document.getElementById('statsBtn').onclick = openStats;
   document.getElementById('sortSelect').onchange = (e) => {
     sortMode = e.target.value;
     if (sortMode === 'near' && !myLocation) { goToMyLocation(); }
