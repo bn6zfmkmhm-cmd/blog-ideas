@@ -555,6 +555,7 @@ let myLocationMarker = null;
 let map, markerLib, markers = [];
 let editState = null; // current record being edited/created
 let currentStoreKey = null; // store group currently shown in the detail sheet
+let pendingShareStoreKey = null; // ?store=... from a shared link, opened once the board's first snapshot arrives
 
 /* ============================================================
    Persistent storage: ask the browser not to auto-evict our
@@ -593,9 +594,10 @@ const ADMIN_PASSWORD = '5555';
 // Soft (UI-level, not database-enforced) check: only the post's own author may
 // edit/delete it, unless the operator confirms they're the admin and enters
 // the admin password (remembered on this device after the first success).
-function checkAdminAccess(r) {
-  if (!r.author || r.author === myNickname) return true; // own post, or no author info to check against
-  if (localStorage.getItem(ADMIN_LS) === '1') return true; // already unlocked on this device
+function isAdminUnlocked() { return localStorage.getItem(ADMIN_LS) === '1'; }
+
+function requireAdminUnlock() {
+  if (isAdminUnlocked()) return true; // already unlocked on this device
   const isAdmin = confirm('この操作は管理者のみ実行できます。あなたは管理者ですか？');
   if (!isAdmin) return false;
   const pw = window.prompt('管理者パスワードを入力してください');
@@ -605,6 +607,17 @@ function checkAdminAccess(r) {
   }
   toast('パスワードが違います');
   return false;
+}
+
+function checkAdminAccess(r) {
+  if (!r.author || r.author === myNickname) return true; // own post, or no author info to check against
+  return requireAdminUnlock();
+}
+
+function updateAdminUI() {
+  const show = isAdminUnlocked();
+  document.getElementById('importBtn').style.display = show ? 'flex' : 'none';
+  document.getElementById('exportBtn').style.display = show ? 'flex' : 'none';
 }
 const boardCode = DEFAULT_BOARD_CODE;
 let firestoreDb = null, firestoreMod = null, boardUnsub = null;
@@ -680,6 +693,12 @@ async function connectBoard(code) {
     if (currentStoreKey && document.getElementById('detailBackdrop').classList.contains('open')) {
       openStore(currentStoreKey);
     }
+    // open the store from a shared link (?store=...), once, as soon as data is available
+    if (pendingShareStoreKey) {
+      const k = pendingShareStoreKey;
+      pendingShareStoreKey = null;
+      openStore(k);
+    }
   }, (err) => {
     console.error('board snapshot error', err);
     toast('共有ボードとの通信でエラーが発生しました');
@@ -708,11 +727,22 @@ function renderShareSheet() {
     </div>
     <div class="save-bar">
       <button class="btn-save" id="saveNickBtn">表示名を保存</button>
-    </div>`;
+    </div>
+    ${isAdminUnlocked() ? '' : '<div class="save-bar" style="margin-top:20px"><button class="chip" id="unlockAdminBtn" type="button">🔐 管理者機能を有効にする</button></div>'}`;
   document.getElementById('saveNickBtn').onclick = () => {
     setNickname(document.getElementById('nickInput').value);
     toast('表示名を保存しました');
   };
+  const unlockBtn = document.getElementById('unlockAdminBtn');
+  if (unlockBtn) {
+    unlockBtn.onclick = () => {
+      if (requireAdminUnlock()) {
+        updateAdminUI();
+        renderShareSheet();
+        toast('管理者機能を有効にしました');
+      }
+    };
+  }
 }
 
 function openShareSheet() { renderShareSheet(); openSheet('shareBackdrop'); }
@@ -766,6 +796,11 @@ function reconfigureKey() { localStorage.removeItem(KEY_LS); location.reload(); 
 window.addEventListener('DOMContentLoaded', async () => {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch((e) => console.error('SW registration failed', e));
+  }
+  const sharedStore = new URLSearchParams(location.search).get('store');
+  if (sharedStore) {
+    pendingShareStoreKey = sharedStore;
+    history.replaceState(null, '', location.pathname);
   }
   db = await openDB();
   const key = localStorage.getItem(KEY_LS);
@@ -1494,14 +1529,38 @@ function openStore(key) {
     : `https://www.google.com/maps/search/?api=1&query=${g.lat},${g.lng}`;
   const countLine = g.recs.length > 1 ? ` ・ ${g.recs.length}件の投稿` : '';
   const pioneerRec = g.recs.reduce((a, b) => (a.createdAt < b.createdAt ? a : b));
+  const shareUrl = location.origin + location.pathname + '?store=' + encodeURIComponent(g.key);
   body.innerHTML = `
     <div class="detail-title">${escapeHtml(g.name)}</div>
     <div class="detail-addr">${escapeHtml(g.address || '')}${countLine}</div>
     ${g.googleRating ? `<div class="detail-meta" style="margin-bottom:10px">Googleの評価: ★ ${g.googleRating.toFixed(1)}</div>` : ''}
     <a class="gmaps-link" href="${mapsUrl}" target="_blank" rel="noopener">📍 Googleマップで開く</a>
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <button class="chip" id="copyStoreLink" type="button">🔗 リンクをコピー</button>
+      <button class="chip" id="lineShareStore" type="button">💬 LINEで送る</button>
+    </div>
     <div class="save-bar" style="margin:16px 0 8px"><button class="btn-save" id="newVisitStore">新しく投稿する</button></div>
     <div class="posts">${g.recs.map(r => storePostHtml(r, g.recs.length > 1 && r.id === pioneerRec.id)).join('')}</div>`;
   document.getElementById('newVisitStore').onclick = () => { closeSheet('detailBackdrop'); openNewVisit(g.recs[0].id); };
+  document.getElementById('copyStoreLink').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+    } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = shareUrl;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    toast('リンクをコピーしました');
+  };
+  document.getElementById('lineShareStore').onclick = () => {
+    const text = g.name + ' ' + shareUrl;
+    window.open('https://social-plugins.line.me/lineit/share?url=' + encodeURIComponent(shareUrl) + '&text=' + encodeURIComponent(text), '_blank', 'noopener');
+  };
   g.recs.forEach(r => {
     const eb = body.querySelector(`[data-edit="${r.id}"]`);
     const db = body.querySelector(`[data-del="${r.id}"]`);
@@ -1646,6 +1705,7 @@ function todayStr() { const d = new Date(); return d.getFullYear() + '-' + Strin
 function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 function wireStaticHandlers() {
+  updateAdminUI();
   const mainArea = document.getElementById('mainArea');
   const mapWrapEl = document.getElementById('mapWrap');
   mapWrapEl.addEventListener('touchstart', () => mainArea.classList.add('map-expanded'), { passive: true });
