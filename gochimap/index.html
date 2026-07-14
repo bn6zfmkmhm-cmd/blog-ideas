@@ -281,8 +281,6 @@
   .detail-photos img { height: 190px; border-radius: 12px; object-fit: cover; flex-shrink: 0; }
   .detail-title { font-size: 21px; font-weight: 800; margin-bottom: 6px; }
   .gacha-spin { text-align: center; padding: 28px 0; }
-  .gacha-dice { font-size: 40px; margin-bottom: 14px; animation: gachaSpinIcon .6s linear infinite; }
-  @keyframes gachaSpinIcon { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   .gacha-reel-window {
     height: 44px; max-width: 280px; margin: 0 auto; overflow: hidden; position: relative;
     border-radius: 10px; background: var(--surface2); border: 1px solid var(--border);
@@ -1213,7 +1211,6 @@ function spinGacha(candidates, finalPick) {
   const body = document.getElementById('gachaBody');
   body.innerHTML = `
     <div class="gacha-spin">
-      <div class="gacha-dice">🎲</div>
       <div class="gacha-reel-window" style="height:${itemH}px">
         <div class="gacha-reel" id="gachaReel">
           ${reelItems.map(r => `<div class="gacha-reel-item" style="height:${itemH}px; line-height:${itemH}px">${escapeHtml(r.name)}</div>`).join('')}
@@ -1224,9 +1221,12 @@ function spinGacha(candidates, finalPick) {
   const reel = document.getElementById('gachaReel');
   const finalOffset = itemH * (reelItems.length - 1);
   let finished = false;
-  const finish = () => { if (finished) return; finished = true; renderGacha(finalPick); };
-  reel.addEventListener('transitionend', finish, { once: true });
-  setTimeout(finish, 2500); // fallback in case the transitionend event doesn't fire
+  // wait for the reel to actually stop moving, then hold on the landed item briefly
+  // before swapping the screen — swapping the instant the transition ends still reads
+  // as the screen changing mid-motion, so give the eye a beat to register it settled.
+  const settle = () => { if (finished) return; finished = true; setTimeout(() => renderGacha(finalPick), 450); };
+  reel.addEventListener('transitionend', settle, { once: true });
+  setTimeout(settle, 3000); // fallback in case the transitionend event doesn't fire
   // double rAF: commit the reel's starting position (transform: none) before the
   // transition is turned on, otherwise the browser may skip straight to the end state
   requestAnimationFrame(() => {
