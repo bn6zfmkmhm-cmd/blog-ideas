@@ -278,6 +278,11 @@
   .detail-photos::-webkit-scrollbar { display: none; }
   .detail-photos img { height: 190px; border-radius: 12px; object-fit: cover; flex-shrink: 0; }
   .detail-title { font-size: 21px; font-weight: 800; margin-bottom: 6px; }
+  .gacha-spin { text-align: center; padding: 28px 0; }
+  .gacha-dice { font-size: 40px; margin-bottom: 14px; animation: gachaSpinIcon .6s linear infinite; }
+  .spin-pulse { animation: gachaPulse .15s ease-out; }
+  @keyframes gachaSpinIcon { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes gachaPulse { from { transform: scale(1.08); opacity: .5; } to { transform: scale(1); opacity: 1; } }
   .detail-addr { font-size: 13px; color: var(--muted); margin-bottom: 14px; line-height: 1.5; }
   .rating-cmp { display: flex; gap: 22px; margin-bottom: 16px; padding: 14px; background: var(--surface); border-radius: 12px; border: 1px solid var(--border); }
   .rating-cmp .col .lbl { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
@@ -1158,13 +1163,11 @@ function renderStats() {
 function openStats() { renderStats(); openSheet('statsBackdrop'); }
 
 // Randomly suggest one store from the wishlist ("行きたいリスト").
-function pickGachaStore() {
+function gachaCandidates() {
   const wantRecs = records.filter(r => r.status === 'want');
-  if (!wantRecs.length) return null;
   const byKey = new Map();
   wantRecs.forEach(r => { const k = storeKey(r); if (!byKey.has(k)) byKey.set(k, r); });
-  const list = [...byKey.values()];
-  return list[Math.floor(Math.random() * list.length)];
+  return [...byKey.values()];
 }
 function renderGacha(rec) {
   const body = document.getElementById('gachaBody');
@@ -1179,11 +1182,35 @@ function renderGacha(rec) {
   document.getElementById('gachaReroll').onclick = () => openGacha();
   document.getElementById('gachaView').onclick = () => { closeSheet('gachaBackdrop'); openStore(storeKey(rec)); };
 }
+function spinGacha(candidates, finalPick) {
+  const body = document.getElementById('gachaBody');
+  body.innerHTML = `
+    <div class="gacha-spin">
+      <div class="gacha-dice">🎲</div>
+      <div class="detail-title" id="gachaSpinName">${escapeHtml(candidates[0].name)}</div>
+    </div>
+  `;
+  const nameEl = document.getElementById('gachaSpinName');
+  const totalSteps = 14;
+  let step = 0;
+  function tick() {
+    if (step >= totalSteps) { renderGacha(finalPick); return; }
+    const r = candidates.length > 1 ? candidates[Math.floor(Math.random() * candidates.length)] : finalPick;
+    nameEl.textContent = r.name;
+    nameEl.classList.remove('spin-pulse');
+    void nameEl.offsetWidth; // restart the CSS animation on every tick
+    nameEl.classList.add('spin-pulse');
+    step++;
+    setTimeout(tick, 50 + step * 15); // ease out: each tick a bit slower than the last
+  }
+  tick();
+}
 function openGacha() {
-  const pick = pickGachaStore();
-  if (!pick) { toast('行きたいリストが空です'); return; }
-  renderGacha(pick);
+  const candidates = gachaCandidates();
+  if (!candidates.length) { toast('行きたいリストが空です'); return; }
+  const finalPick = candidates[Math.floor(Math.random() * candidates.length)];
   openSheet('gachaBackdrop');
+  spinGacha(candidates, finalPick);
 }
 
 let markerRegistry = new Map(); // group key -> PinElement instance (for hover sync)
