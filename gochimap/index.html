@@ -1261,7 +1261,7 @@ function spinGacha(candidates, finalPick) {
           requestAnimationFrame(() => { body.style.opacity = '1'; });
         });
       }, 300);
-    }, 650);
+    }, 1600); // linger on the landed item before fading to the result screen
   };
   reel.addEventListener('transitionend', settle, { once: true });
   setTimeout(settle, 3000); // fallback in case the transitionend event doesn't fire
