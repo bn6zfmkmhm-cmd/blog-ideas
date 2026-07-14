@@ -147,6 +147,8 @@
     background: var(--surface2); border: 1px solid var(--border); color: var(--muted); white-space: nowrap;
   }
   .chip.active { background: var(--accent); border-color: var(--accent); color: #1b1410; font-weight: 700; }
+  .tag-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .tag-suggestions .chip { cursor: pointer; }
   .chip.danger { color: var(--danger); border-color: var(--danger); }
   .draft-item {
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -362,6 +364,11 @@
     transition: opacity .2s, transform .2s; pointer-events: none; white-space: nowrap;
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+  .toast.undo-toast { pointer-events: auto; }
+  .toast.undo-toast button {
+    margin-left: 10px; background: none; border: none; padding: 0;
+    color: var(--accent2); font-weight: 700; font-size: 14px; text-decoration: underline; cursor: pointer;
+  }
 
   /* photo lightbox */
   .zoomable-photo { cursor: zoom-in; }
@@ -489,7 +496,8 @@
       </div>
       <div class="field">
         <label>タグ（「、」区切り）</label>
-        <input type="text" id="fTags" placeholder="例: ラーメン、夜、一人">
+        <input type="text" id="fTags" placeholder="例: ラーメン、夜、一人" autocomplete="off">
+        <div class="tag-suggestions" id="tagSuggestions"></div>
       </div>
       <div class="field" id="reviewField">
         <label>感想</label>
@@ -1378,6 +1386,31 @@ function allTags() {
   records.forEach(r => (r.tags || []).forEach(t => s.add(t)));
   return [...s];
 }
+
+// Suggest previously-used tags matching whatever's currently being typed after the
+// last 「、」/,/， delimiter, so the multi-value comma-separated field still gets
+// useful autocomplete (a plain <datalist> only matches the whole field value).
+function renderTagSuggestions() {
+  const input = document.getElementById('fTags');
+  const box = document.getElementById('tagSuggestions');
+  const parts = input.value.split(/[、,，]/);
+  const fragment = parts[parts.length - 1].trim();
+  const already = new Set(parts.slice(0, -1).map(t => t.trim()).filter(Boolean));
+  if (!fragment) { box.innerHTML = ''; return; }
+  const matches = allTags()
+    .filter(t => !already.has(t) && t !== fragment && t.toLowerCase().includes(fragment.toLowerCase()))
+    .slice(0, 6);
+  box.innerHTML = matches.map(t => `<span class="chip" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</span>`).join('');
+  box.querySelectorAll('[data-tag]').forEach(el => {
+    el.onclick = () => {
+      const newParts = parts.slice(0, -1).map(s => s.trim()).filter(Boolean);
+      newParts.push(el.dataset.tag);
+      input.value = newParts.join('、') + '、';
+      box.innerHTML = '';
+      input.focus();
+    };
+  });
+}
 function allTrips() {
   const s = new Set();
   records.forEach(r => { if (r.trip) s.add(r.trip); });
@@ -1408,6 +1441,7 @@ function renderFilters() {
 }
 function filteredRecords() {
   let rs = records.slice();
+  if (pendingDeleteId) rs = rs.filter(r => r.id !== pendingDeleteId);
   if (activeFilter.type === 'tag') rs = rs.filter(r => (r.tags || []).includes(activeFilter.value));
   else if (activeFilter.type === 'trip') rs = rs.filter(r => r.trip === activeFilter.value);
   if (searchQuery) {
@@ -1604,6 +1638,7 @@ function populateEditForm(state, isNew) {
   document.getElementById('fAddr').value = editState.address || '';
   document.getElementById('fDate').value = editState.visitedDate || todayStr();
   document.getElementById('fTags').value = (editState.tags || []).join(', ');
+  document.getElementById('tagSuggestions').innerHTML = '';
   document.getElementById('fReview').value = editState.review || '';
   setRating(editState.myRating || 0);
   setStatus(editState.status || 'visited');
@@ -1853,10 +1888,9 @@ async function deleteRecordById(id) {
 async function deleteRecord() {
   if (!editState) return;
   if (!confirm('この投稿を削除しますか？')) return;
-  const ok = await deleteRecordById(editState.id);
-  if (!ok) return;
+  const id = editState.id;
   closeSheet('editBackdrop');
-  toast('削除しました');
+  softDelete(id);
 }
 
 /* ============================================================
@@ -1951,11 +1985,10 @@ function closeLightbox() { document.getElementById('lightbox').classList.remove(
 
 async function deletePostFromStore(id, key) {
   if (!confirm('この投稿を削除しますか？')) return;
-  const ok = await deleteRecordById(id);
-  if (!ok) return;
-  toast('削除しました');
-  const g = groupedRecords().find(x => x.key === key);
-  if (g) openStore(key); else { closeSheet('detailBackdrop'); currentStoreKey = null; }
+  softDelete(id, () => {
+    const g = groupedRecords().find(x => x.key === key);
+    if (g) openStore(key); else { closeSheet('detailBackdrop'); currentStoreKey = null; }
+  });
 }
 
 // Toggle a lightweight ❤️ like on a post (anyone can like/unlike; no admin gate).
@@ -2050,9 +2083,44 @@ function closeSheet(id) { document.getElementById(id).classList.remove('open'); 
 let toastTimer;
 function toast(msg) {
   const t = document.getElementById('toast');
-  t.textContent = msg; t.classList.add('show');
   clearTimeout(toastTimer);
+  t.classList.remove('undo-toast');
+  t.textContent = msg; t.classList.add('show');
   toastTimer = setTimeout(() => t.classList.remove('show'), 1900);
+}
+function showUndoToast(msg, onUndo) {
+  const t = document.getElementById('toast');
+  clearTimeout(toastTimer);
+  t.innerHTML = `${escapeHtml(msg)} <button type="button" id="toastUndoBtn">元に戻す</button>`;
+  t.classList.add('show', 'undo-toast');
+  document.getElementById('toastUndoBtn').onclick = () => {
+    clearTimeout(toastTimer);
+    t.classList.remove('show', 'undo-toast');
+    onUndo();
+  };
+  toastTimer = setTimeout(() => t.classList.remove('show', 'undo-toast'), 1200);
+}
+
+// Soft-delete: hide the record from view instantly, but only actually delete it from
+// the shared board after a short window (with an undo toast) so mistaps are recoverable.
+let pendingDeleteId = null;
+let pendingDeleteTimer = null;
+function softDelete(id, updateView) {
+  pendingDeleteId = id;
+  renderFilters(); renderList(); renderMarkers();
+  if (updateView) updateView();
+  showUndoToast('削除しました', () => {
+    if (pendingDeleteId !== id) return;
+    clearTimeout(pendingDeleteTimer);
+    pendingDeleteId = null;
+    renderFilters(); renderList(); renderMarkers();
+    if (updateView) updateView();
+  });
+  pendingDeleteTimer = setTimeout(async () => {
+    pendingDeleteId = null;
+    const ok = await deleteRecordById(id);
+    if (!ok) { renderFilters(); renderList(); renderMarkers(); if (updateView) updateView(); }
+  }, 1200);
 }
 function todayStr() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -2084,6 +2152,7 @@ function wireStaticHandlers() {
   document.querySelectorAll('#statusToggle .status-btn').forEach(b => {
     b.onclick = () => setStatus(b.dataset.status);
   });
+  document.getElementById('fTags').addEventListener('input', renderTagSuggestions);
   document.getElementById('photoInput').onchange = (e) => {
     const files = Array.from(e.target.files); // snapshot before clearing the input
     e.target.value = '';
