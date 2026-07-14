@@ -159,6 +159,8 @@
   /* list */
   #list { flex: 1 1 55%; overflow-y: auto; padding: 10px 12px calc(90px + var(--safe-bottom)); -webkit-overflow-scrolling: touch; transition: flex-basis .25s ease; }
   .empty { text-align: center; color: var(--muted); padding: 50px 20px; line-height: 1.8; font-size: 14px; }
+  .list-section-header { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin: 4px 4px 8px; }
+  .list-section-header:not(:first-child) { margin-top: 20px; }
   .card {
     display: flex; gap: 12px; background: var(--surface); border: 1px solid var(--border);
     border-radius: 14px; padding: 11px; margin-bottom: 10px;
@@ -314,11 +316,13 @@
   .level-progress-bar { height: 6px; background: var(--border); border-radius: 4px; overflow: hidden; margin-top: 6px; }
   .level-progress-fill { height: 100%; background: var(--accent); }
   .level-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
-  .badge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 10px; margin: 8px 0 20px; }
-  .badge-item { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 6px; border-radius: 12px; border: 1px solid var(--border); text-align: center; }
-  .badge-item.locked { opacity: .35; }
-  .badge-icon { font-size: 22px; }
-  .badge-name { font-size: 11px; font-weight: 700; }
+  .badge-list { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 20px; }
+  .badge-row { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 12px; border: 1px solid var(--border); }
+  .badge-row.locked { opacity: .4; }
+  .badge-row .badge-icon { font-size: 24px; flex-shrink: 0; width: 30px; text-align: center; }
+  .badge-info { flex: 1; min-width: 0; }
+  .badge-name { font-size: 13px; font-weight: 700; }
+  .badge-desc { font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
   .challenge-card { padding: 14px; border: 1px solid var(--border); border-radius: 14px; margin-bottom: 20px; background: var(--surface2); }
   .challenge-text { font-weight: 700; font-size: 14px; margin-bottom: 8px; }
   .challenge-progress { font-size: 12px; color: var(--muted); margin-top: 4px; }
@@ -1073,12 +1077,12 @@ function pioneerCount(myRecs) {
 }
 
 const BADGE_DEFS = [
-  { icon: '🏅', name: 'はじめの一歩', check: (m, pc) => m.length >= 1 },
-  { icon: '🍜', name: '開拓者', check: (m, pc) => new Set(m.map(storeKey)).size >= 5 },
-  { icon: '⭐', name: '目利き', check: (m, pc) => m.filter(r => r.myRating === 5).length >= 3 },
-  { icon: '📸', name: 'カメラマン', check: (m, pc) => m.filter(r => photoSrcs(r).length > 0).length >= 5 },
-  { icon: '🔖', name: '夢見る人', check: (m, pc) => m.filter(r => r.status === 'want').length >= 5 },
-  { icon: '🚩', name: '発見者', check: (m, pc) => pc >= 3 },
+  { icon: '🏅', name: 'はじめの一歩', desc: '1件投稿すると獲得', check: (m, pc) => m.length >= 1 },
+  { icon: '🍜', name: '開拓者', desc: '5軒に投稿すると獲得', check: (m, pc) => new Set(m.map(storeKey)).size >= 5 },
+  { icon: '⭐', name: '目利き', desc: '★5評価を3件つけると獲得', check: (m, pc) => m.filter(r => r.myRating === 5).length >= 3 },
+  { icon: '📸', name: 'カメラマン', desc: '写真付きの投稿を5件すると獲得', check: (m, pc) => m.filter(r => photoSrcs(r).length > 0).length >= 5 },
+  { icon: '🔖', name: '夢見る人', desc: '行きたいリストに5件登録すると獲得', check: (m, pc) => m.filter(r => r.status === 'want').length >= 5 },
+  { icon: '🚩', name: '発見者', desc: 'まだ誰も投稿していない店への一番乗り投稿を3回すると獲得', check: (m, pc) => pc >= 3 },
 ];
 
 const CHALLENGE_DEFS = [
@@ -1120,9 +1124,15 @@ function renderStats() {
 
   const badgeHtml = `
     <h3>実績バッジ</h3>
-    <div class="badge-grid">${BADGE_DEFS.map(b => {
+    <div class="badge-list">${BADGE_DEFS.map(b => {
       const unlocked = b.check(myRecs, pc);
-      return `<div class="badge-item${unlocked ? '' : ' locked'}"><div class="badge-icon">${b.icon}</div><div class="badge-name">${escapeHtml(b.name)}</div></div>`;
+      return `<div class="badge-row${unlocked ? '' : ' locked'}">
+        <div class="badge-icon">${b.icon}</div>
+        <div class="badge-info">
+          <div class="badge-name">${escapeHtml(b.name)}</div>
+          <div class="badge-desc">${escapeHtml(b.desc)}</div>
+        </div>
+      </div>`;
     }).join('')}</div>
   `;
 
@@ -1409,7 +1419,8 @@ function renderList() {
     return;
   }
   el.innerHTML = '';
-  groups.forEach(g => {
+
+  function buildCard(g) {
     const latest = g.latest;
     const card = document.createElement('div');
     card.className = 'card';
@@ -1445,8 +1456,26 @@ function renderList() {
     card.onclick = () => openStore(g.key);
     card.addEventListener('mouseenter', () => highlightPin(g.key, true));
     card.addEventListener('mouseleave', () => highlightPin(g.key, false));
-    el.appendChild(card);
-  });
+    return card;
+  }
+
+  const postedGroups = groups.filter(g => g.hasVisited);
+  const wantGroups = groups.filter(g => !g.hasVisited);
+
+  if (postedGroups.length) {
+    const h = document.createElement('div');
+    h.className = 'list-section-header';
+    h.textContent = `投稿（${postedGroups.length}）`;
+    el.appendChild(h);
+    postedGroups.forEach(g => el.appendChild(buildCard(g)));
+  }
+  if (wantGroups.length) {
+    const h = document.createElement('div');
+    h.className = 'list-section-header';
+    h.textContent = `行きたいリスト（${wantGroups.length}）`;
+    el.appendChild(h);
+    wantGroups.forEach(g => el.appendChild(buildCard(g)));
+  }
 }
 
 /* ============================================================
