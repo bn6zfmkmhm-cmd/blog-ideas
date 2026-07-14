@@ -1203,6 +1203,9 @@ function gachaCandidates() {
 }
 function renderGacha(rec) {
   const body = document.getElementById('gachaBody');
+  const mapsUrl = rec.placeId
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rec.name)}&query_place_id=${rec.placeId}`
+    : `https://www.google.com/maps/search/?api=1&query=${rec.lat},${rec.lng}`;
   body.innerHTML = `
     <div class="detail-title">${escapeHtml(rec.name)}</div>
     <div class="detail-addr">${escapeHtml(rec.address || '')}</div>
@@ -1212,28 +1215,7 @@ function renderGacha(rec) {
     </div>
   `;
   document.getElementById('gachaReroll').onclick = () => openGacha();
-  document.getElementById('gachaView').onclick = () => renderGachaOverview(rec);
-}
-// Lightweight overview for a still-unvisited store — no post list, no "add a new
-// visit" prompt, since the store hasn't actually been posted about yet.
-function renderGachaOverview(rec) {
-  const body = document.getElementById('gachaBody');
-  const mapsUrl = rec.placeId
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rec.name)}&query_place_id=${rec.placeId}`
-    : `https://www.google.com/maps/search/?api=1&query=${rec.lat},${rec.lng}`;
-  const tags = (rec.tags || []).map(t => `<span class="minitag">#${escapeHtml(t)}</span>`).join(' ');
-  body.innerHTML = `
-    <div class="detail-title">${escapeHtml(rec.name)}</div>
-    <div class="detail-addr">${escapeHtml(rec.address || '')}</div>
-    ${rec.googleRating ? `<div class="detail-meta" style="margin-bottom:10px">Googleの評価: ★ ${rec.googleRating.toFixed(1)}</div>` : ''}
-    <a class="gmaps-link" href="${mapsUrl}" target="_blank" rel="noopener">📍 Googleマップで開く</a>
-    ${tags ? `<div class="tagline" style="margin-top:10px">${tags}</div>` : ''}
-    ${rec.memo ? `<div class="detail-meta" style="margin-top:10px">${escapeHtml(rec.memo)}</div>` : ''}
-    <div class="save-bar" style="margin-top:20px">
-      <button class="btn-save" id="gachaGoPost">行った記録をつける</button>
-    </div>
-  `;
-  document.getElementById('gachaGoPost').onclick = () => { closeSheet('gachaBackdrop'); openNewVisit(rec.id); };
+  document.getElementById('gachaView').onclick = () => window.open(mapsUrl, '_blank', 'noopener');
 }
 // Slot-machine style reel: a tall strip of name rows scrolls vertically inside a
 // fixed-height clipped window via a single CSS transform transition (no per-tick
