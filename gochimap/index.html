@@ -289,6 +289,24 @@
     font-size: 17px; font-weight: 800; text-align: center; padding: 0 14px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+  .gacha-reel-window.landed { animation: gachaLandedGlow .65s ease; }
+  @keyframes gachaLandedGlow {
+    0% { box-shadow: 0 0 0 0 rgba(255, 167, 38, 0); border-color: var(--border); }
+    30% { box-shadow: 0 0 0 8px rgba(255, 167, 38, .35); border-color: var(--accent); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 167, 38, 0); border-color: var(--border); }
+  }
+  .gacha-sparkle { position: absolute; font-size: 18px; opacity: 0; pointer-events: none; }
+  .gacha-sparkle-1 { top: -10px; left: -6px; }
+  .gacha-sparkle-2 { top: -12px; right: -4px; }
+  .gacha-sparkle-3 { bottom: -10px; left: 50%; margin-left: -9px; }
+  .gacha-reel-window.landed .gacha-sparkle { animation: gachaSparkle .65s ease; }
+  .gacha-reel-window.landed .gacha-sparkle-2 { animation-delay: .08s; }
+  .gacha-reel-window.landed .gacha-sparkle-3 { animation-delay: .16s; }
+  @keyframes gachaSparkle {
+    0% { opacity: 0; transform: scale(.3) rotate(0deg); }
+    40% { opacity: 1; transform: scale(1.3) rotate(20deg); }
+    100% { opacity: 0; transform: scale(.6) rotate(35deg); }
+  }
   .detail-addr { font-size: 13px; color: var(--muted); margin-bottom: 14px; line-height: 1.5; }
   .rating-cmp { display: flex; gap: 22px; margin-bottom: 16px; padding: 14px; background: var(--surface); border-radius: 12px; border: 1px solid var(--border); }
   .rating-cmp .col .lbl { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
@@ -1211,20 +1229,40 @@ function spinGacha(candidates, finalPick) {
   const body = document.getElementById('gachaBody');
   body.innerHTML = `
     <div class="gacha-spin">
-      <div class="gacha-reel-window" style="height:${itemH}px">
+      <div class="gacha-reel-window" id="gachaReelWindow" style="height:${itemH}px">
         <div class="gacha-reel" id="gachaReel">
           ${reelItems.map(r => `<div class="gacha-reel-item" style="height:${itemH}px; line-height:${itemH}px">${escapeHtml(r.name)}</div>`).join('')}
         </div>
+        <span class="gacha-sparkle gacha-sparkle-1">✨</span>
+        <span class="gacha-sparkle gacha-sparkle-2">✨</span>
+        <span class="gacha-sparkle gacha-sparkle-3">✨</span>
       </div>
     </div>
   `;
   const reel = document.getElementById('gachaReel');
   const finalOffset = itemH * (reelItems.length - 1);
   let finished = false;
-  // wait for the reel to actually stop moving, then hold on the landed item briefly
-  // before swapping the screen — swapping the instant the transition ends still reads
-  // as the screen changing mid-motion, so give the eye a beat to register it settled.
-  const settle = () => { if (finished) return; finished = true; setTimeout(() => renderGacha(finalPick), 450); };
+  // wait for the reel to actually stop moving, play a celebratory flash on the landed
+  // item, then cross-fade into the result screen — swapping the instant the transition
+  // ends still reads as the screen changing mid-motion, so give the eye a beat.
+  const settle = () => {
+    if (finished) return;
+    finished = true;
+    const win = document.getElementById('gachaReelWindow');
+    if (win) win.classList.add('landed');
+    setTimeout(() => {
+      body.style.transition = 'opacity .3s ease';
+      body.style.opacity = '0';
+      setTimeout(() => {
+        renderGacha(finalPick);
+        body.style.transition = 'opacity .3s ease';
+        body.style.opacity = '0';
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => { body.style.opacity = '1'; });
+        });
+      }, 300);
+    }, 650);
+  };
   reel.addEventListener('transitionend', settle, { once: true });
   setTimeout(settle, 3000); // fallback in case the transitionend event doesn't fire
   // double rAF: commit the reel's starting position (transform: none) before the
