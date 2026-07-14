@@ -417,7 +417,7 @@
     <div class="spacer"></div>
     <button class="icon-btn" id="myLocationBtn" title="現在地">📍</button>
     <button class="icon-btn" id="heatmapBtn" title="投稿密度ヒートマップ">🔥</button>
-    <button class="icon-btn" id="gachaBtn" title="シェフの気まぐれ">🎲</button>
+    <button class="icon-btn" id="gachaBtn" title="シェフの気まぐれ">👨‍🍳</button>
     <button class="icon-btn" id="statsBtn" title="統計">📊</button>
     <button class="icon-btn" id="settingsBtn" title="設定">⚙️</button>
     <button class="icon-btn" id="importBtn" title="読み込み">📥</button>
@@ -560,7 +560,7 @@
 <div class="sheet-backdrop" id="gachaBackdrop">
   <div class="sheet">
     <div class="sheet-head">
-      <h2>🎲 シェフの気まぐれ</h2>
+      <h2>👨‍🍳 シェフの気まぐれ</h2>
       <button class="close" data-close="gachaBackdrop">×</button>
     </div>
     <div class="sheet-body" id="gachaBody"></div>
@@ -1207,7 +1207,7 @@ function renderGacha(rec) {
     <div class="detail-title">${escapeHtml(rec.name)}</div>
     <div class="detail-addr">${escapeHtml(rec.address || '')}</div>
     <div class="save-bar" style="margin-top:16px; display:flex; gap:8px;">
-      <button class="chip" id="gachaReroll" type="button">🎲 もう一度</button>
+      <button class="chip" id="gachaReroll" type="button">🔀 もう一度</button>
       <button class="btn-save" id="gachaView" style="flex:1">この店を見る</button>
     </div>
   `;
