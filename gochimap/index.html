@@ -1204,7 +1204,7 @@ function openStats() { renderStats(); openSheet('statsBackdrop'); }
 
 // Randomly suggest one store from the wishlist ("行きたいリスト").
 function gachaCandidates() {
-  const wantRecs = records.filter(r => r.status === 'want');
+  const wantRecs = records.filter(r => r.status === 'want' && r.author === myNickname);
   const byKey = new Map();
   wantRecs.forEach(r => { const k = storeKey(r); if (!byKey.has(k)) byKey.set(k, r); });
   return [...byKey.values()];
@@ -1381,9 +1381,9 @@ function toggleHeatmap() {
 /* ============================================================
    Filters
    ============================================================ */
-function allTags() {
+function allTags(recs) {
   const s = new Set();
-  records.forEach(r => (r.tags || []).forEach(t => s.add(t)));
+  (recs || records).forEach(r => (r.tags || []).forEach(t => s.add(t)));
   return [...s];
 }
 
@@ -1411,9 +1411,9 @@ function renderTagSuggestions() {
     };
   });
 }
-function allTrips() {
+function allTrips(recs) {
   const s = new Set();
-  records.forEach(r => { if (r.trip) s.add(r.trip); });
+  (recs || records).forEach(r => { if (r.trip) s.add(r.trip); });
   return [...s];
 }
 function renderFilters() {
@@ -1426,7 +1426,8 @@ function renderFilters() {
     c.onclick = () => { activeFilter = { type, value }; renderFilters(); renderList(); renderMarkers(); };
     return c;
   };
-  const allChip = mk('すべて (' + records.length + ')', 'all', null);
+  const visible = viewerVisibleRecords();
+  const allChip = mk('すべて (' + visible.length + ')', 'all', null);
   allChip.onclick = () => { activeFilter = { type: 'all', value: null }; minRatingFilter = false; renderFilters(); renderList(); renderMarkers(); };
   el.appendChild(allChip);
 
@@ -1436,12 +1437,21 @@ function renderFilters() {
   ratingChip.onclick = () => { minRatingFilter = !minRatingFilter; renderFilters(); renderList(); renderMarkers(); };
   el.appendChild(ratingChip);
 
-  allTrips().forEach(t => el.appendChild(mk('🧳 ' + t, 'trip', t)));
-  allTags().forEach(t => el.appendChild(mk('#' + t, 'tag', t)));
+  allTrips(visible).forEach(t => el.appendChild(mk('🧳 ' + t, 'trip', t)));
+  allTags(visible).forEach(t => el.appendChild(mk('#' + t, 'tag', t)));
+}
+// Records the current viewer should actually see: an optimistically-deleted record
+// is hidden until its undo window passes, and the wishlist ("行きたい") is private —
+// each person only sees their own want-status entries, never anyone else's.
+function viewerVisibleRecords() {
+  return records.filter(r => {
+    if (pendingDeleteId && r.id === pendingDeleteId) return false;
+    if (r.status === 'want' && r.author !== myNickname) return false;
+    return true;
+  });
 }
 function filteredRecords() {
-  let rs = records.slice();
-  if (pendingDeleteId) rs = rs.filter(r => r.id !== pendingDeleteId);
+  let rs = viewerVisibleRecords();
   if (activeFilter.type === 'tag') rs = rs.filter(r => (r.tags || []).includes(activeFilter.value));
   else if (activeFilter.type === 'trip') rs = rs.filter(r => r.trip === activeFilter.value);
   if (searchQuery) {
