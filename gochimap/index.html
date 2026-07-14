@@ -280,6 +280,10 @@
   .detail-title { font-size: 21px; font-weight: 800; margin-bottom: 6px; }
   .gacha-spin { text-align: center; padding: 28px 0; }
   .gacha-dice { font-size: 40px; margin-bottom: 14px; animation: gachaSpinIcon .6s linear infinite; }
+  #gachaSpinName {
+    height: 30px; line-height: 30px; padding: 0 16px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
   .spin-pulse { animation: gachaPulse .15s ease-out; }
   @keyframes gachaSpinIcon { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   @keyframes gachaPulse { from { transform: scale(1.08); opacity: .5; } to { transform: scale(1); opacity: 1; } }
