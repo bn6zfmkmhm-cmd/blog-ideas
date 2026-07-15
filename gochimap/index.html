@@ -1892,9 +1892,20 @@ async function saveRecord() {
     records = await dbGetAll();
   }
   if (editDraftId) { const id = editDraftId; editDraftId = null; await draftDelete(id); await refreshDraftsUI(); }
+  // Logging an actual visit to a store makes any of your own pending wishlist
+  // entries for that same store redundant — clear them out automatically.
+  let clearedWantEntry = false;
+  if (editIsNew && editState.status !== 'want') {
+    const staleWant = records.find(r => r.id !== editState.id && r.status === 'want'
+      && r.author === myNickname && storeKey(r) === storeKey(editState));
+    if (staleWant) {
+      const ok = await deleteRecordById(staleWant.id);
+      clearedWantEntry = ok;
+    }
+  }
   closeSheet('editBackdrop');
   renderFilters(); renderList(); renderMarkers();
-  toast('保存しました 🍜');
+  toast(clearedWantEntry ? '保存しました 🍜（行きたいリストからは削除しました）' : '保存しました 🍜');
 }
 
 // Delete a single record by id (handles shared board vs private). Returns true on success.
