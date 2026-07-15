@@ -203,13 +203,6 @@
     box-shadow: 0 4px 14px rgba(0,0,0,.4);
   }
   #draftsBtn:active { background: var(--border); }
-  #locationShareIndicator {
-    position: fixed; left: 18px; bottom: calc(18px + var(--safe-bottom)); z-index: 20;
-    padding: 10px 16px; border-radius: 20px; border: 1px solid var(--accent);
-    background: var(--surface2); color: var(--accent2); font-size: 13px; font-weight: 700;
-    box-shadow: 0 4px 14px rgba(0,0,0,.4);
-  }
-  #locationShareIndicator:active { background: var(--border); }
 
   /* ---------- Modal / sheet ---------- */
   .sheet-backdrop {
@@ -432,7 +425,6 @@
     <div class="spacer"></div>
     <button class="icon-btn" id="myLocationBtn" title="現在地">📍</button>
     <button class="icon-btn" id="heatmapBtn" title="投稿密度ヒートマップ">🔥</button>
-    <button class="icon-btn" id="memberLocationsBtn" title="メンバーの位置（管理人限定）" style="display:none">🧑‍🤝‍🧑</button>
     <button class="icon-btn" id="gachaBtn" title="シェフの気まぐれ">👨‍🍳</button>
     <button class="icon-btn" id="statsBtn" title="統計">📊</button>
     <button class="icon-btn" id="settingsBtn" title="設定">⚙️</button>
@@ -465,7 +457,6 @@
   </div>
 
   <button id="draftsBtn" style="display:none" type="button">📝 下書き (<span id="draftsCount">0</span>)</button>
-  <button id="locationShareIndicator" style="display:none" type="button">📍 位置情報を共有中</button>
   <button id="fab">＋</button>
 </div>
 
@@ -694,25 +685,6 @@ const NICK_LS = 'gochimap.nickname';
 let myNickname = localStorage.getItem(NICK_LS) || '';
 const ADMIN_LS = 'gochimap.isAdmin';
 const ADMIN_PASSWORD = 'vsr10';
-const LOCATION_OPTOUT_LS = 'gochimap.locationOptOut';
-
-/* ============================================================
-   Member location sharing — opt-in-by-default-off, admin-gated viewing.
-   Consent design (deliberately, not incidental):
-     - A member's device only ever sends location while the admin's global
-       switch is on AND that member hasn't personally opted out.
-     - Whoever is actively sharing sees a persistent, unmissable on-screen
-       indicator with a one-tap way to stop — never silent.
-     - Only an unlocked admin device can see members' shared locations.
-   ============================================================ */
-let locationSharingEnabledGlobally = false;
-let myLocationOptOut = localStorage.getItem(LOCATION_OPTOUT_LS) === '1';
-let locationShareInterval = null;
-let memberLocations = new Map(); // nickname -> { lat, lng, updatedAt }
-let memberLocationsVisible = false;
-let settingsUnsub = null, presenceUnsub = null;
-const PRESENCE_STALE_MS = 5 * 60 * 1000; // treat as "no longer sharing" if not refreshed in 5 min
-
 // Soft (UI-level, not database-enforced) check: only the post's own author may
 // edit/delete it, unless the operator confirms they're the admin and enters
 // the admin password (remembered on this device after the first success).
@@ -740,8 +712,6 @@ function updateAdminUI() {
   const show = isAdminUnlocked();
   document.getElementById('importBtn').style.display = show ? 'flex' : 'none';
   document.getElementById('exportBtn').style.display = show ? 'flex' : 'none';
-  document.getElementById('memberLocationsBtn').style.display = show ? 'flex' : 'none';
-  if (!show && memberLocationsVisible) { memberLocationsVisible = false; renderMemberLocationMarkers(); }
 }
 const boardCode = DEFAULT_BOARD_CODE;
 let firestoreDb = null, firestoreMod = null, boardUnsub = null;
@@ -830,126 +800,6 @@ async function connectBoard(code) {
   });
 }
 
-async function connectLocationSharing(code) {
-  const fs = await getFirestore();
-  if (settingsUnsub) { settingsUnsub(); settingsUnsub = null; }
-  if (presenceUnsub) { presenceUnsub(); presenceUnsub = null; }
-
-  const settingsRef = fs.doc(firestoreDb, 'boards', code, 'settings', 'locationSharing');
-  settingsUnsub = fs.onSnapshot(settingsRef, (snap) => {
-    locationSharingEnabledGlobally = !!(snap.exists() && snap.data().enabled);
-    updateMyLocationSharingState();
-    renderShareSheetIfOpen();
-  }, (err) => {
-    console.error('location settings snapshot error', err);
-    toast('位置共有の設定を読み込めませんでした（' + (err && err.message ? err.message : err) + '）');
-  });
-
-  const presenceCol = fs.collection(firestoreDb, 'boards', code, 'presence');
-  presenceUnsub = fs.onSnapshot(presenceCol, (snap) => {
-    memberLocations = new Map();
-    snap.docs.forEach(d => memberLocations.set(d.id, d.data()));
-    if (memberLocationsVisible) renderMemberLocationMarkers();
-  }, (err) => {
-    console.error('presence snapshot error', err);
-    toast('メンバーの位置情報を読み込めませんでした（' + (err && err.message ? err.message : err) + '）');
-  });
-}
-
-// Whether this device should currently be transmitting location: only when the
-// admin's global switch is on AND this person hasn't personally opted out.
-function shouldShareMyLocation() {
-  return locationSharingEnabledGlobally && !myLocationOptOut;
-}
-
-function updateMyLocationSharingState() {
-  const indicator = document.getElementById('locationShareIndicator');
-  if (shouldShareMyLocation()) {
-    indicator.style.display = 'flex';
-    if (!locationShareInterval) startSharingMyLocation();
-  } else {
-    indicator.style.display = 'none';
-    if (locationShareInterval) stopSharingMyLocation();
-  }
-}
-
-function startSharingMyLocation() {
-  const send = () => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      try {
-        const fs = await getFirestore();
-        const nickname = ensureNickname();
-        if (!nickname) return;
-        const ref = fs.doc(firestoreDb, 'boards', boardCode, 'presence', nickname);
-        await fs.setDoc(ref, { lat: pos.coords.latitude, lng: pos.coords.longitude, updatedAt: Date.now() });
-      } catch (e) { console.error('location share failed', e); }
-    }, (e) => console.error('geolocation failed', e), { enableHighAccuracy: false, timeout: 10000 });
-  };
-  send();
-  locationShareInterval = setInterval(send, 30000);
-}
-
-async function stopSharingMyLocation() {
-  clearInterval(locationShareInterval);
-  locationShareInterval = null;
-  try {
-    const fs = await getFirestore();
-    const nickname = ensureNickname();
-    if (nickname) await fs.deleteDoc(fs.doc(firestoreDb, 'boards', boardCode, 'presence', nickname));
-  } catch (e) { console.error('failed to clear shared location', e); }
-}
-
-// Admin-only: flips the shared board-wide switch that everyone else's devices watch.
-async function toggleGlobalLocationSharing() {
-  if (!requireAdminUnlock()) return;
-  try {
-    const fs = await getFirestore();
-    const ref = fs.doc(firestoreDb, 'boards', boardCode, 'settings', 'locationSharing');
-    await fs.setDoc(ref, { enabled: !locationSharingEnabledGlobally });
-  } catch (e) {
-    console.error('toggle location sharing failed', e);
-    toast('位置共有の切り替えに失敗しました');
-  }
-}
-
-function toggleMyLocationOptOut() {
-  myLocationOptOut = !myLocationOptOut;
-  localStorage.setItem(LOCATION_OPTOUT_LS, myLocationOptOut ? '1' : '0');
-  updateMyLocationSharingState();
-  renderShareSheetIfOpen();
-}
-
-function renderShareSheetIfOpen() {
-  if (document.getElementById('shareBackdrop').classList.contains('open')) renderShareSheet();
-}
-
-function memberLocationEntries() {
-  const now = Date.now();
-  return [...memberLocations.entries()].filter(([, v]) => now - (v.updatedAt || 0) < PRESENCE_STALE_MS);
-}
-
-function toggleMemberLocationsLayer() {
-  if (!requireAdminUnlock()) return;
-  memberLocationsVisible = !memberLocationsVisible;
-  document.getElementById('memberLocationsBtn').classList.toggle('armed', memberLocationsVisible);
-  renderMemberLocationMarkers();
-}
-
-let memberLocationMarkers = [];
-function renderMemberLocationMarkers() {
-  memberLocationMarkers.forEach(m => m.map = null);
-  memberLocationMarkers = [];
-  if (!memberLocationsVisible || !map || !markerLib) return;
-  memberLocationEntries().forEach(([nickname, loc]) => {
-    const dot = document.createElement('div');
-    dot.style.cssText = 'display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:#4285F4;border:2px solid #fff;color:#fff;font-size:12px;font-weight:800;box-shadow:0 2px 6px rgba(0,0,0,.4)';
-    dot.textContent = nickname.slice(0, 1);
-    dot.title = nickname;
-    memberLocationMarkers.push(new markerLib.AdvancedMarkerElement({ map, position: { lat: loc.lat, lng: loc.lng }, content: dot, zIndex: 998 }));
-  });
-}
-
 function setNickname(v) {
   myNickname = (v || '').trim().slice(0, 20);
   localStorage.setItem(NICK_LS, myNickname);
@@ -975,23 +825,7 @@ function renderShareSheet() {
     </div>
     <div class="save-bar" style="margin-top:20px">${isAdminUnlocked()
       ? '<button class="chip" id="lockAdminBtn" type="button">🔒 管理人機能を無効にする</button>'
-      : '<button class="chip" id="unlockAdminBtn" type="button">🔐 管理人機能を有効にする</button>'}</div>
-    ${locationSharingEnabledGlobally ? `
-    <div class="field" style="margin-top:24px">
-      <label>位置情報の共有</label>
-      <p class="sub" style="margin-bottom:10px">管理人が位置情報の共有をONにしています。共有中は誰がどこにいるか管理人だけが見られます。自分の分だけいつでも止められます。</p>
-      <div class="save-bar">
-        <button class="chip" id="myLocationOptOutBtn" type="button">${myLocationOptOut ? '📍 自分の位置共有を再開する' : '🚫 自分の位置共有を止める'}</button>
-      </div>
-    </div>` : ''}
-    ${isAdminUnlocked() ? `
-    <div class="field" style="margin-top:24px">
-      <label>位置情報の共有（管理人設定）</label>
-      <p class="sub" style="margin-bottom:10px">ONにすると、オプトアウトしていない全メンバーの端末が位置情報の共有を始めます。</p>
-      <div class="save-bar">
-        <button class="chip" id="globalLocationToggleBtn" type="button">${locationSharingEnabledGlobally ? '🚫 全員の位置共有をOFFにする' : '📍 全員の位置共有をONにする'}</button>
-      </div>
-    </div>` : ''}`;
+      : '<button class="chip" id="unlockAdminBtn" type="button">🔐 管理人機能を有効にする</button>'}</div>`;
   document.getElementById('saveNickBtn').onclick = () => {
     setNickname(document.getElementById('nickInput').value);
     toast('表示名を保存しました');
@@ -1013,21 +847,6 @@ function renderShareSheet() {
       updateAdminUI();
       renderShareSheet();
       toast('管理人機能を無効にしました');
-    };
-  }
-  const optOutBtn = document.getElementById('myLocationOptOutBtn');
-  if (optOutBtn) {
-    optOutBtn.onclick = () => {
-      toggleMyLocationOptOut();
-      toast(myLocationOptOut ? '自分の位置共有を止めました' : '自分の位置共有を再開しました');
-    };
-  }
-  const globalBtn = document.getElementById('globalLocationToggleBtn');
-  if (globalBtn) {
-    globalBtn.onclick = async () => {
-      const turningOn = !locationSharingEnabledGlobally;
-      await toggleGlobalLocationSharing();
-      toast(turningOn ? '全員の位置共有をONにしました' : '全員の位置共有をOFFにしました');
     };
   }
 }
@@ -1114,8 +933,6 @@ async function startApp(key) {
     ]);
     try { await connectBoard(boardCode); }
     catch (e) { console.error('board connect failed', e); toast('共有ボードへの接続に失敗しました（通信環境をご確認ください）'); records = await dbGetAll(); }
-    try { await connectLocationSharing(boardCode); }
-    catch (e) { console.error('location sharing connect failed', e); }
     renderFilters();
     renderList();
     renderMarkers();
@@ -2372,10 +2189,8 @@ function wireStaticHandlers() {
   document.getElementById('settingsBtn').onclick = openShareSheet;
   document.getElementById('myLocationBtn').onclick = goToMyLocation;
   document.getElementById('heatmapBtn').onclick = toggleHeatmap;
-  document.getElementById('memberLocationsBtn').onclick = toggleMemberLocationsLayer;
   document.getElementById('gachaBtn').onclick = openGacha;
   document.getElementById('draftsBtn').onclick = openDrafts;
-  document.getElementById('locationShareIndicator').onclick = openShareSheet;
   document.getElementById('statsBtn').onclick = openStats;
   document.getElementById('sortSelect').onchange = (e) => {
     sortMode = e.target.value;
