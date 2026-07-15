@@ -425,6 +425,7 @@
     <div class="spacer"></div>
     <button class="icon-btn" id="myLocationBtn" title="現在地">📍</button>
     <button class="icon-btn" id="heatmapBtn" title="投稿密度ヒートマップ">🔥</button>
+    <button class="icon-btn" id="wantListBtn" title="行きたいリスト">🔖</button>
     <button class="icon-btn" id="gachaBtn" title="シェフの気まぐれ">👨‍🍳</button>
     <button class="icon-btn" id="statsBtn" title="統計">📊</button>
     <button class="icon-btn" id="settingsBtn" title="設定">⚙️</button>
@@ -562,6 +563,17 @@
       <button class="close" data-close="draftsBackdrop">×</button>
     </div>
     <div class="sheet-body" id="draftsBody"></div>
+  </div>
+</div>
+
+<!-- ===== Want list sheet ===== -->
+<div class="sheet-backdrop" id="wantListBackdrop">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2>🔖 行きたいリスト</h2>
+      <button class="close" data-close="wantListBackdrop">×</button>
+    </div>
+    <div class="sheet-body" id="wantListBody"></div>
   </div>
 </div>
 
@@ -784,6 +796,7 @@ async function connectBoard(code) {
     records = snap.docs.map(d => Object.assign({ photos: [], photoUrls: [] }, d.data(), { id: d.id }));
     renderFilters(); renderList(); renderMarkers();
     if (heatmapVisible) refreshHeatmapCircles();
+    if (document.getElementById('wantListBackdrop').classList.contains('open')) renderWantList();
     // keep an open store sheet in sync with realtime updates
     if (currentStoreKey && document.getElementById('detailBackdrop').classList.contains('open')) {
       openStore(currentStoreKey);
@@ -1503,10 +1516,50 @@ function photoSrcs(r) {
   return [];
 }
 
+// Shared by the main (posts) list and the separate 行きたいリスト sheet.
+function buildStoreCard(g) {
+  const latest = g.latest;
+  const card = document.createElement('div');
+  card.className = 'card';
+  // thumbnail: newest record that has a photo
+  let thumbSrc = '';
+  for (const r of g.recs) { const s = photoSrcs(r); if (s.length) { thumbSrc = s[0]; break; } }
+  const thumb = thumbSrc ? `<img class="thumb" src="${thumbSrc}">` : `<div class="thumb">🍽️</div>`;
+  // tags: union across all posts for this store
+  const tagSet = new Set(); g.recs.forEach(r => (r.tags || []).forEach(t => tagSet.add(t)));
+  const tags = [...tagSet].map(t => `<span class="minitag">#${escapeHtml(t)}</span>`).join('');
+  const trip = latest.trip ? `<span class="minitag">🧳 ${escapeHtml(latest.trip)}</span>` : '';
+  const countBadge = g.recs.length > 1 ? `<span class="count-badge">📝 ${g.recs.length}件</span>` : '';
+  const visitedRecs = g.recs.filter(r => r.status !== 'want');
+  const wantOnly = visitedRecs.length === 0;
+  const displayRec = wantOnly ? latest : visitedRecs[0];
+  let ratingHtml;
+  if (wantOnly) {
+    ratingHtml = `<span class="want-badge">🔖 行きたい</span>${countBadge}`;
+  } else if (visitedRecs.length > 1) {
+    ratingHtml = `<span class="stars">${starStrPrecise(g.avgRating)}</span><span class="avg-num">${g.avgRating.toFixed(1)}</span>${countBadge}`;
+  } else {
+    ratingHtml = `<span class="stars">${starStr(displayRec.myRating)}</span>${countBadge}`;
+  }
+  card.innerHTML = `
+    ${thumb}
+    <div class="body">
+      <div class="name">${escapeHtml(latest.name)}</div>
+      <div class="meta">${ratingHtml}<span>${displayRec.visitedDate || ''}</span>${displayRec.author ? `<span>🙋 ${escapeHtml(displayRec.author)}</span>` : ''}</div>
+      <div class="memo">${escapeHtml(displayRec.memo || displayRec.review || '')}</div>
+      <div class="tagline">${trip}${tags}</div>
+    </div>`;
+  card.dataset.key = g.key;
+  card.onclick = () => openStore(g.key);
+  card.addEventListener('mouseenter', () => highlightPin(g.key, true));
+  card.addEventListener('mouseleave', () => highlightPin(g.key, false));
+  return card;
+}
+
 function renderList() {
   const el = document.getElementById('list');
-  const groups = groupedRecords();
-  if (!groups.length) {
+  const postedGroups = groupedRecords().filter(g => g.hasVisited);
+  if (!postedGroups.length) {
     const isFiltering = searchQuery || activeFilter.type !== 'all';
     el.innerHTML = isFiltering
       ? '<div class="empty">該当する投稿がありませんでした。<br>検索語やタグを変えてみてください。</div>'
@@ -1514,64 +1567,24 @@ function renderList() {
     return;
   }
   el.innerHTML = '';
-
-  function buildCard(g) {
-    const latest = g.latest;
-    const card = document.createElement('div');
-    card.className = 'card';
-    // thumbnail: newest record that has a photo
-    let thumbSrc = '';
-    for (const r of g.recs) { const s = photoSrcs(r); if (s.length) { thumbSrc = s[0]; break; } }
-    const thumb = thumbSrc ? `<img class="thumb" src="${thumbSrc}">` : `<div class="thumb">🍽️</div>`;
-    // tags: union across all posts for this store
-    const tagSet = new Set(); g.recs.forEach(r => (r.tags || []).forEach(t => tagSet.add(t)));
-    const tags = [...tagSet].map(t => `<span class="minitag">#${escapeHtml(t)}</span>`).join('');
-    const trip = latest.trip ? `<span class="minitag">🧳 ${escapeHtml(latest.trip)}</span>` : '';
-    const countBadge = g.recs.length > 1 ? `<span class="count-badge">📝 ${g.recs.length}件</span>` : '';
-    const visitedRecs = g.recs.filter(r => r.status !== 'want');
-    const wantOnly = visitedRecs.length === 0;
-    const displayRec = wantOnly ? latest : visitedRecs[0];
-    let ratingHtml;
-    if (wantOnly) {
-      ratingHtml = `<span class="want-badge">🔖 行きたい</span>${countBadge}`;
-    } else if (visitedRecs.length > 1) {
-      ratingHtml = `<span class="stars">${starStrPrecise(g.avgRating)}</span><span class="avg-num">${g.avgRating.toFixed(1)}</span>${countBadge}`;
-    } else {
-      ratingHtml = `<span class="stars">${starStr(displayRec.myRating)}</span>${countBadge}`;
-    }
-    card.innerHTML = `
-      ${thumb}
-      <div class="body">
-        <div class="name">${escapeHtml(latest.name)}</div>
-        <div class="meta">${ratingHtml}<span>${displayRec.visitedDate || ''}</span>${displayRec.author ? `<span>🙋 ${escapeHtml(displayRec.author)}</span>` : ''}</div>
-        <div class="memo">${escapeHtml(displayRec.memo || displayRec.review || '')}</div>
-        <div class="tagline">${trip}${tags}</div>
-      </div>`;
-    card.dataset.key = g.key;
-    card.onclick = () => openStore(g.key);
-    card.addEventListener('mouseenter', () => highlightPin(g.key, true));
-    card.addEventListener('mouseleave', () => highlightPin(g.key, false));
-    return card;
-  }
-
-  const postedGroups = groups.filter(g => g.hasVisited);
-  const wantGroups = groups.filter(g => !g.hasVisited);
-
-  if (postedGroups.length) {
-    const h = document.createElement('div');
-    h.className = 'list-section-header';
-    h.textContent = `投稿（${postedGroups.length}）`;
-    el.appendChild(h);
-    postedGroups.forEach(g => el.appendChild(buildCard(g)));
-  }
-  if (wantGroups.length) {
-    const h = document.createElement('div');
-    h.className = 'list-section-header';
-    h.textContent = `行きたいリスト（${wantGroups.length}）`;
-    el.appendChild(h);
-    wantGroups.forEach(g => el.appendChild(buildCard(g)));
-  }
+  const h = document.createElement('div');
+  h.className = 'list-section-header';
+  h.textContent = `投稿（${postedGroups.length}）`;
+  el.appendChild(h);
+  postedGroups.forEach(g => el.appendChild(buildStoreCard(g)));
 }
+
+function renderWantList() {
+  const el = document.getElementById('wantListBody');
+  const wantGroups = groupedRecords().filter(g => !g.hasVisited);
+  if (!wantGroups.length) {
+    el.innerHTML = '<div class="empty">行きたいリストは空です。<br>店を開いて「🔖 行きたい」を選ぶと、ここに追加されます。</div>';
+    return;
+  }
+  el.innerHTML = '';
+  wantGroups.forEach(g => el.appendChild(buildStoreCard(g)));
+}
+function openWantList() { renderWantList(); openSheet('wantListBackdrop'); }
 
 /* ============================================================
    Edit sheet
@@ -2199,6 +2212,7 @@ function wireStaticHandlers() {
   document.getElementById('settingsBtn').onclick = openShareSheet;
   document.getElementById('myLocationBtn').onclick = goToMyLocation;
   document.getElementById('heatmapBtn').onclick = toggleHeatmap;
+  document.getElementById('wantListBtn').onclick = openWantList;
   document.getElementById('gachaBtn').onclick = openGacha;
   document.getElementById('draftsBtn').onclick = openDrafts;
   document.getElementById('statsBtn').onclick = openStats;
