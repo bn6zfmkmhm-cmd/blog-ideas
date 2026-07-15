@@ -839,6 +839,9 @@ async function connectLocationSharing(code) {
     locationSharingEnabledGlobally = !!(snap.exists() && snap.data().enabled);
     updateMyLocationSharingState();
     renderShareSheetIfOpen();
+  }, (err) => {
+    console.error('location settings snapshot error', err);
+    toast('位置共有の設定を読み込めませんでした（' + (err && err.message ? err.message : err) + '）');
   });
 
   const presenceCol = fs.collection(firestoreDb, 'boards', code, 'presence');
@@ -846,6 +849,9 @@ async function connectLocationSharing(code) {
     memberLocations = new Map();
     snap.docs.forEach(d => memberLocations.set(d.id, d.data()));
     if (memberLocationsVisible) renderMemberLocationMarkers();
+  }, (err) => {
+    console.error('presence snapshot error', err);
+    toast('メンバーの位置情報を読み込めませんでした（' + (err && err.message ? err.message : err) + '）');
   });
 }
 
