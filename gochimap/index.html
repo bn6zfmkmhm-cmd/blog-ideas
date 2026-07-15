@@ -969,6 +969,7 @@ async function initMap() {
       openEdit(null, { lat: e.latLng.lat(), lng: e.latLng.lng() });
     }
   });
+  map.addListener('zoom_changed', () => { if (heatmapVisible) refreshHeatmapCircles(); });
 }
 
 // Fetch a place's details (same fields as the search box) and pre-fill the open edit sheet.
@@ -1348,9 +1349,18 @@ function renderMarkers() {
 // circles instead: areas with more posts get visibly darker from the overlap.
 let heatmapCircles = [];
 let heatmapVisible = false;
+const HEATMAP_PIXEL_RADIUS = 18; // desired on-screen size, kept constant across zoom levels
 
+// google.maps.Circle's radius is real-world meters, so at a fixed value it looks
+// huge when zoomed in and shrinks to invisible when zoomed out. Convert a desired
+// on-screen pixel radius to meters at the current zoom/latitude (standard Web
+// Mercator meters-per-pixel formula) so the circles stay a consistent visible size.
+function metersPerPixel(lat, zoom) {
+  return 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, zoom);
+}
 function refreshHeatmapCircles() {
   heatmapCircles.forEach(c => c.setMap(null));
+  const zoom = map.getZoom();
   heatmapCircles = records
     .filter(r => r.status !== 'want' && typeof r.lat === 'number' && typeof r.lng === 'number')
     .map(r => new google.maps.Circle({
@@ -1359,7 +1369,7 @@ function refreshHeatmapCircles() {
       fillOpacity: 0.15,
       map,
       center: { lat: r.lat, lng: r.lng },
-      radius: 50,
+      radius: HEATMAP_PIXEL_RADIUS * metersPerPixel(r.lat, zoom),
       clickable: false,
     }));
 }
