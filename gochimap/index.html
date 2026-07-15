@@ -368,7 +368,8 @@
     position: fixed; bottom: calc(90px + var(--safe-bottom)); left: 50%; transform: translateX(-50%);
     background: var(--surface2); border: 1px solid var(--border); color: var(--text);
     padding: 11px 18px; border-radius: 24px; font-size: 14px; z-index: 500; opacity: 0;
-    transition: opacity .2s, transform .2s; pointer-events: none; white-space: nowrap;
+    transition: opacity .2s, transform .2s; pointer-events: none;
+    max-width: calc(100vw - 32px); white-space: pre-wrap; text-align: center; word-break: break-word;
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
   .toast.undo-toast { pointer-events: auto; }
