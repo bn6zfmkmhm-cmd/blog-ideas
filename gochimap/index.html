@@ -1446,7 +1446,11 @@ function renderFilters() {
     const c = document.createElement('button');
     c.className = 'chip' + (activeFilter.type === type && activeFilter.value === value ? ' active' : '');
     c.textContent = label;
-    c.onclick = () => { activeFilter = { type, value }; renderFilters(); renderList(); renderMarkers(); };
+    c.onclick = () => {
+      const isActive = activeFilter.type === type && activeFilter.value === value;
+      activeFilter = isActive ? { type: 'all', value: null } : { type, value };
+      renderFilters(); renderList(); renderMarkers();
+    };
     return c;
   };
   const visible = viewerVisibleRecords();
