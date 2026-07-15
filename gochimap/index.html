@@ -1366,7 +1366,7 @@ function refreshHeatmapCircles() {
     .map(r => new google.maps.Circle({
       strokeWeight: 0,
       fillColor: '#ff5722',
-      fillOpacity: 0.15,
+      fillOpacity: 0.4,
       map,
       center: { lat: r.lat, lng: r.lng },
       radius: HEATMAP_PIXEL_RADIUS * metersPerPixel(r.lat, zoom),
